@@ -13,6 +13,9 @@ import {
   Loader2,
   Link2,
   Check,
+  X,
+  Copy,
+  FileText,
 } from "lucide-react";
 
 interface LibraryImage {
@@ -25,6 +28,7 @@ interface LibraryImage {
   scoreData: {
     overall: number;
   } | null;
+  compiledPrompt: string | null;
 }
 
 interface LibraryClientProps {
@@ -40,8 +44,11 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
   const [galleryLink, setGalleryLink] = useState<string | null>(null);
   const [galleryName, setGalleryName] = useState("");
   const [showGalleryForm, setShowGalleryForm] = useState(false);
+  const [detailImage, setDetailImage] = useState<LibraryImage | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -117,6 +124,12 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
     if (galleryLink) {
       navigator.clipboard.writeText(galleryLink);
     }
+  };
+
+  const copyPrompt = (prompt: string) => {
+    navigator.clipboard.writeText(prompt);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
   return (
@@ -223,7 +236,7 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
               className={`group overflow-hidden cursor-pointer transition-all ${
                 isSelected ? "ring-2 ring-primary" : ""
               }`}
-              onClick={() => toggleSelect(img.id)}
+              onClick={() => setDetailImage(img)}
             >
               <div className="relative aspect-square">
                 <Image
@@ -234,11 +247,14 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                   sizes="(max-width: 768px) 50vw, 25vw"
                 />
                 {/* Selection checkbox */}
-                <div className={`absolute top-2 left-2 rounded-md p-1 transition-all ${
-                  isSelected
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-black/30 text-white opacity-0 group-hover:opacity-100"
-                }`}>
+                <div
+                  className={`absolute top-2 left-2 rounded-md p-1 transition-all ${
+                    isSelected
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-black/30 text-white opacity-0 group-hover:opacity-100"
+                  }`}
+                  onClick={(e) => toggleSelect(e, img.id)}
+                >
                   {isSelected ? (
                     <CheckSquare className="h-4 w-4" />
                   ) : (
@@ -253,6 +269,12 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                     "bg-red-500 text-white"
                   }`}>
                     {img.scoreData.overall}/10
+                  </div>
+                )}
+                {/* Prompt indicator */}
+                {img.compiledPrompt && (
+                  <div className="absolute bottom-2 right-2 rounded-md bg-black/40 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    <FileText className="h-3.5 w-3.5" />
                   </div>
                 )}
               </div>
@@ -285,6 +307,154 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
           );
         })}
       </div>
+
+      {/* ─── Image Detail Modal ─────────────────────────────────── */}
+      {detailImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setDetailImage(null)}
+        >
+          <div
+            className="relative bg-background rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col md:flex-row"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setDetailImage(null)}
+              className="absolute top-3 right-3 z-10 rounded-full bg-black/50 p-1.5 text-white hover:bg-black/70 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* Image */}
+            <div className="relative w-full md:w-1/2 aspect-square md:aspect-auto md:min-h-[500px] bg-muted">
+              <Image
+                src={`/api/images/${encodeURIComponent(detailImage.filePath)}`}
+                alt="Visuel genere"
+                fill
+                className="object-contain"
+                sizes="50vw"
+              />
+            </div>
+
+            {/* Details panel */}
+            <div className="w-full md:w-1/2 p-5 overflow-y-auto space-y-4">
+              <h3 className="text-lg font-semibold">Details du visuel</h3>
+
+              {/* Metadata */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {detailImage.format && (
+                    <Badge variant="outline" className="text-xs">
+                      {detailImage.format}
+                    </Badge>
+                  )}
+                  <Badge
+                    variant={
+                      detailImage.status === "approved"
+                        ? "default"
+                        : detailImage.status === "rejected"
+                          ? "destructive"
+                          : "secondary"
+                    }
+                    className="text-xs"
+                  >
+                    {detailImage.status === "approved"
+                      ? "Valide"
+                      : detailImage.status === "rejected"
+                        ? "Refuse"
+                        : "En attente"}
+                  </Badge>
+                  {detailImage.scoreData?.overall && (
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${
+                        detailImage.scoreData.overall >= 7 ? "border-green-500 text-green-700" :
+                        detailImage.scoreData.overall >= 4 ? "border-amber-500 text-amber-700" :
+                        "border-red-500 text-red-700"
+                      }`}
+                    >
+                      Score: {detailImage.scoreData.overall}/10
+                    </Badge>
+                  )}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  {new Date(detailImage.createdAt).toLocaleDateString("fr-FR", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+
+              {/* Tags */}
+              {detailImage.tags && detailImage.tags.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tags</label>
+                  <div className="flex flex-wrap gap-1">
+                    {detailImage.tags.map((tag, i) => (
+                      <Badge key={i} variant="secondary" className="text-[10px]">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Prompt */}
+              {detailImage.compiledPrompt && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      Prompt utilise
+                    </label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => copyPrompt(detailImage.compiledPrompt!)}
+                    >
+                      {copiedPrompt ? (
+                        <Check className="h-3 w-3 mr-1 text-green-500" />
+                      ) : (
+                        <Copy className="h-3 w-3 mr-1" />
+                      )}
+                      {copiedPrompt ? "Copie !" : "Copier"}
+                    </Button>
+                  </div>
+                  <div className="rounded-lg border bg-muted/50 p-3">
+                    <p className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words">
+                      {detailImage.compiledPrompt}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = `/api/images/${encodeURIComponent(detailImage.filePath)}`;
+                    a.download = `visuel_${detailImage.id}.png`;
+                    a.click();
+                  }}
+                >
+                  <Download className="h-3 w-3 mr-1.5" />
+                  Telecharger
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

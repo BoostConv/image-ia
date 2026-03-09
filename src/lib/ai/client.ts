@@ -21,6 +21,8 @@ export async function generateImage(params: {
   prompt: string;
   aspectRatio?: AspectRatio;
   referenceImage?: Buffer;
+  referenceImages?: Buffer[];
+  temperature?: number;
 }): Promise<GenerationResult> {
   const apiKey = getApiKey();
 
@@ -28,7 +30,17 @@ export async function generateImage(params: {
     { text: string } | { inline_data: { mime_type: string; data: string } }
   > = [];
 
-  if (params.referenceImage) {
+  // Add all reference images (multi-ref support)
+  if (params.referenceImages && params.referenceImages.length > 0) {
+    for (const ref of params.referenceImages) {
+      parts.push({
+        inline_data: {
+          mime_type: "image/png",
+          data: ref.toString("base64"),
+        },
+      });
+    }
+  } else if (params.referenceImage) {
     parts.push({
       inline_data: {
         mime_type: "image/png",
@@ -37,19 +49,20 @@ export async function generateImage(params: {
     });
   }
 
-  // Inject aspect ratio as a prompt instruction since gemini-2.0-flash-exp
-  // does not support imageSizeOptions in generationConfig
-  let promptText = params.prompt;
-  if (params.aspectRatio && params.aspectRatio !== "1:1") {
-    promptText += `\n\nAspect ratio: ${params.aspectRatio}. Compose the image to fit this exact ratio.`;
-  }
-  parts.push({ text: promptText });
+  // Prepend aspect ratio instruction to prompt text (API doesn't support imageSizeOptions)
+  const aspectHint = params.aspectRatio
+    ? `Generate this image in ${params.aspectRatio} aspect ratio. `
+    : "";
+  parts.push({ text: aspectHint + params.prompt });
+
+  const generationConfig: Record<string, unknown> = {
+    responseModalities: ["TEXT", "IMAGE"],
+    temperature: params.temperature ?? 1,
+  };
 
   const body = {
     contents: [{ parts }],
-    generationConfig: {
-      responseModalities: ["TEXT", "IMAGE"],
-    },
+    generationConfig,
   };
 
   let lastError: Error | null = null;

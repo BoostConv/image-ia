@@ -104,8 +104,22 @@ export async function getRecentImages(limit = 50) {
 
 export async function getBrandImages(brandId: string, limit = 100) {
   return db
-    .select()
+    .select({
+      id: generatedImages.id,
+      generationId: generatedImages.generationId,
+      filePath: generatedImages.filePath,
+      mimeType: generatedImages.mimeType,
+      format: generatedImages.format,
+      status: generatedImages.status,
+      tags: generatedImages.tags,
+      scoreData: generatedImages.scoreData,
+      creativeData: generatedImages.creativeData,
+      preferenceScore: generatedImages.preferenceScore,
+      createdAt: generatedImages.createdAt,
+      compiledPrompt: generations.compiledPrompt,
+    })
     .from(generatedImages)
+    .leftJoin(generations, eq(generatedImages.generationId, generations.id))
     .where(eq(generatedImages.brandId, brandId))
     .orderBy(desc(generatedImages.createdAt))
     .limit(limit);

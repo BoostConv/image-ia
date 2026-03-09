@@ -1,16 +1,14 @@
 import { NextRequest } from "next/server";
-import { generateImage } from "@/lib/ai/client";
-import { generateCreativePrompts, scoreGeneratedImage, improvePrompt } from "@/lib/ai/claude-creative";
+import { runPipeline } from "@/lib/engine/pipeline";
+import type { RawPipelineInput, PipelineEvent } from "@/lib/engine/types";
 import {
   createGeneration,
   updateGenerationStatus,
   saveGeneratedImage,
   savePromptHistory,
-  updateImageScoreData,
 } from "@/lib/db/queries/generations";
 import {
   saveImage,
-  readImage,
   getSubDir,
   generateFileName,
   getImageUrl,
@@ -25,7 +23,6 @@ import { compileDocumentsPrompt, compileInspirationPrompt } from "@/lib/db/queri
 import { db } from "@/lib/db";
 import { generatedImages } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import type { AspectRatio } from "@/lib/ai/types";
 
 export const maxDuration = 300;
 
@@ -40,6 +37,7 @@ export async function POST(request: NextRequest) {
       format = "feed_square",
       aspectRatio = "1:1",
       count = 5,
+      renderStrategy = "complete_ad",
     } = body;
 
     if (!brandId) {
@@ -65,369 +63,326 @@ export async function POST(request: NextRequest) {
       compileInspirationPrompt(brandId),
     ]);
 
-    // Load product reference image (first available)
-    let productReferenceImage: Buffer | null = null;
-    if (product?.imagePaths && (product.imagePaths as string[]).length > 0) {
-      const imagePaths = product.imagePaths as string[];
-      for (const imgPath of imagePaths) {
-        const buf = await readImage(imgPath);
-        if (buf) {
-          productReferenceImage = buf;
-          break;
-        }
-      }
-    }
-
     const generationId = await createGeneration({
       brandId,
       productId: productId || undefined,
       personaId: personaId || undefined,
       mode: "batch",
       promptLayers: { brand: "", persona: "", brief: brief || "", format: "", custom: "" },
-      compiledPrompt: `[BATCH x${count}] Claude Creative + Nano Banana`,
+      compiledPrompt: `[ENGINE v2] pipeline A→J→B→C→D→E→H1→G→H2→K→F x${count}`,
       format,
       aspectRatio,
-      estimatedCost: count * 0.134,
+      estimatedCost: count * 0.25,
     });
 
     await updateGenerationStatus(generationId, "generating");
 
+    // Build raw pipeline input
+    const pipelineInput: RawPipelineInput = {
+      brand: {
+        name: brand.name,
+        description: brand.description || undefined,
+        mission: brand.mission || undefined,
+        vision: brand.vision || undefined,
+        positioning: brand.positioning || undefined,
+        tone: brand.tone || undefined,
+        values: brand.values || undefined,
+        targetMarket: brand.targetMarket || undefined,
+        colorPalette: brand.colorPalette || undefined,
+        typography: brand.typography || undefined,
+      },
+      product: product
+        ? {
+            name: product.name,
+            category: product.category || undefined,
+            usp: product.usp || undefined,
+            benefits: product.benefits || undefined,
+            positioning: product.positioning || undefined,
+            marketingArguments: product.marketingArguments || undefined,
+            targetAudience: product.targetAudience || undefined,
+            competitiveAdvantage: product.competitiveAdvantage || undefined,
+            imagePaths: (product.imagePaths as string[]) || undefined,
+          }
+        : undefined,
+      persona: persona
+        ? {
+            name: persona.name,
+            description: persona.description || undefined,
+            demographics: persona.demographics || undefined,
+            psychographics: persona.psychographics || undefined,
+            visualStyle: persona.visualStyle || undefined,
+          }
+        : undefined,
+      brief: brief || undefined,
+      format,
+      aspectRatio,
+      count,
+      guidelinesPrompt: guidelinesPrompt || undefined,
+      documentsPrompt: documentsPrompt || undefined,
+      inspirationPrompt: inspirationPrompt || undefined,
+      renderStrategy: renderStrategy as "clean" | "complete_ad",
+    };
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        try {
-          // Phase 1: Claude generates creative concepts
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "phase",
-                phase: "ideation",
-                message: "Claude genere les concepts creatifs...",
-              })}\n\n`
-            )
-          );
+        function send(data: Record<string, unknown>) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        }
 
-          const creativeResult = await generateCreativePrompts({
-            brand: {
-              name: brand.name,
-              description: brand.description || undefined,
-              mission: brand.mission || undefined,
-              vision: brand.vision || undefined,
-              positioning: brand.positioning || undefined,
-              tone: brand.tone || undefined,
-              values: brand.values || undefined,
-              targetMarket: brand.targetMarket || undefined,
-              colorPalette: brand.colorPalette || undefined,
-              typography: brand.typography || undefined,
+        try {
+          const result = await runPipeline({
+            input: pipelineInput,
+            onEvent: (event: PipelineEvent) => {
+              switch (event.type) {
+                case "phase":
+                  send({ type: "phase", phase: event.phase, message: event.message });
+                  break;
+
+                case "batch_locked":
+                  send({
+                    type: "phase",
+                    phase: "J",
+                    message: `Batch verrouillé: ${event.lock.campaignThesis.slice(0, 60)}...`,
+                  });
+                  break;
+
+                case "briefs_generated":
+                  // Bridge to old "concepts" format for UI compatibility
+                  send({
+                    type: "concepts",
+                    concepts: event.briefs.map((b) => ({
+                      concept: b.single_visual_idea.slice(0, 80),
+                      angle: b.creative_archetype,
+                      level: b.awareness_level,
+                      emotion: b.emotional_mechanic,
+                      renderMode: b.renderMode,
+                      overlayIntent: b.overlayIntent,
+                    })),
+                  });
+                  break;
+
+                case "prompt_built":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: `Concept ${event.index + 1} prêt`,
+                  });
+                  break;
+
+                case "render_pass_1":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: event.success
+                      ? `Concept ${event.index + 1} — pass 1 OK`
+                      : `Concept ${event.index + 1} — pass 1 échoué`,
+                  });
+                  break;
+
+                case "render_pass_2":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: event.success
+                      ? `Concept ${event.index + 1} — pass 2 (edit) OK`
+                      : `Concept ${event.index + 1} — pass 2 (edit) échoué`,
+                  });
+                  break;
+
+                case "render_gate":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: `Concept ${event.index + 1} — gate: ${event.verdict.action}`,
+                  });
+                  break;
+
+                case "composing":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: `Concept ${event.index + 1} — composition (${event.layout})`,
+                  });
+                  break;
+
+                case "composed":
+                  send({
+                    type: "progress",
+                    current: event.index + 1,
+                    total: count,
+                    concept: `Concept ${event.index + 1} — composé (${event.layoutUsed})`,
+                  });
+                  break;
+
+                case "error":
+                  send({
+                    type: "error",
+                    index: event.index,
+                    error: event.error,
+                  });
+                  break;
+
+                default:
+                  break;
+              }
             },
-            product: product
-              ? {
-                  name: product.name,
-                  category: product.category || undefined,
-                  usp: product.usp || undefined,
-                  benefits: product.benefits || undefined,
-                  positioning: product.positioning || undefined,
-                  marketingArguments: product.marketingArguments || undefined,
-                  targetAudience: product.targetAudience || undefined,
-                  competitiveAdvantage: product.competitiveAdvantage || undefined,
-                }
-              : undefined,
-            persona: persona
-              ? {
-                  name: persona.name,
-                  description: persona.description || undefined,
-                  demographics: persona.demographics || undefined,
-                  psychographics: persona.psychographics || undefined,
-                  visualStyle: persona.visualStyle || undefined,
-                }
-              : undefined,
-            brief: brief || undefined,
-            format,
-            aspectRatio,
-            count,
-            guidelinesPrompt: guidelinesPrompt || undefined,
-            documentsPrompt: documentsPrompt || undefined,
-            inspirationPrompt: inspirationPrompt || undefined,
-            hasProductImages: !!productReferenceImage,
           });
 
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "concepts",
-                concepts: creativeResult.prompts.map((p) => ({
-                  concept: p.concept,
-                  angle: p.creativeAngle,
-                  level: p.consciousnessLevel,
-                  emotion: p.emotionalHook,
-                })),
-              })}\n\n`
-            )
-          );
-
-          // Phase 2: Nano Banana generates images
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "phase",
-                phase: "generation",
-                message: "Generation des visuels avec Nano Banana...",
-              })}\n\n`
-            )
-          );
-
+          // Save rendered images + composed ads to disk and DB
           let completed = 0;
           let failed = 0;
+          const subDir = getSubDir(generationId);
 
-          for (let i = 0; i < creativeResult.prompts.length; i++) {
-            const creative = creativeResult.prompts[i];
-
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  type: "progress",
-                  current: i + 1,
-                  total: creativeResult.prompts.length,
-                  concept: creative.concept,
-                })}\n\n`
-              )
-            );
+          for (let i = 0; i < result.renders.length; i++) {
+            const render = result.renders[i];
+            const composedAd = result.composedAds[i];
+            const dualEval = result.evaluation.individual[i];
+            const renderGate = result.renderGateVerdicts[i];
+            const compositionGateVerdict = result.compositionGateVerdicts[i];
 
             try {
-              const result = await generateImage({
-                prompt: creative.visualPrompt,
-                aspectRatio: aspectRatio as AspectRatio,
-                referenceImage: productReferenceImage || undefined,
+              // Save raw render
+              const fileName = generateFileName(generationId, i, render.final_mime_type);
+              const relativePath = await saveImage(render.final_image, subDir, fileName);
+
+              // Save composed ad
+              let composedFilePath: string | undefined;
+              if (composedAd && composedAd.layoutUsed !== "none") {
+                const composedFileName = generateFileName(generationId, i, "image/png").replace(
+                  ".png",
+                  "_composed.png"
+                );
+                composedFilePath = await saveImage(composedAd.buffer, subDir, composedFileName);
+              }
+
+              const imageId = await saveGeneratedImage({
+                generationId,
+                brandId,
+                filePath: composedFilePath || relativePath,
+                mimeType: composedAd ? "image/png" : render.final_mime_type,
+                fileSizeBytes: composedAd ? composedAd.buffer.length : render.final_image.length,
+                format,
+                personaId: personaId || undefined,
+                tags: [
+                  format,
+                  render.brief.creative_archetype,
+                  render.brief.hook_type,
+                  render.brief.renderMode || "scene_first",
+                  composedAd?.layoutUsed || "none",
+                  `batch_${i + 1}`,
+                ],
               });
 
-              if (result.success && result.images.length > 0) {
-                const subDir = getSubDir(generationId);
+              // Save full creative data (brief + art direction + evaluations + gates)
+              await db.update(generatedImages).set({
+                composedFilePath: composedFilePath || null,
+                creativeData: {
+                  brief: render.brief as unknown as Record<string, unknown>,
+                  artDirection: render.art_direction as unknown as Record<string, unknown>,
+                  evaluation: dualEval?.base as unknown as Record<string, unknown>,
+                  composedEvaluation: dualEval?.composed as unknown as Record<string, unknown>,
+                  gateVerdict: renderGate as unknown as Record<string, unknown>,
+                  compositionGateVerdict: compositionGateVerdict as unknown as Record<string, unknown>,
+                },
+                // Bridge old scoreData format for backward compatibility
+                scoreData: {
+                  composition: dualEval?.base?.craft?.composition_quality || 0,
+                  colorHarmony: dualEval?.base?.craft?.material_coherence || 0,
+                  emotionalImpact: dualEval?.base?.ad_performance?.stop_scroll_power || 0,
+                  brandAlignment: dualEval?.base?.ad_performance?.visible_promise || 0,
+                  audienceAppeal: dualEval?.base?.ad_performance?.meta_native_feel || 0,
+                  scrollStopping: dualEval?.composed?.stop_scroll_power || 0,
+                  copyIntegration: dualEval?.composed?.text_legibility || 0,
+                  uniqueness: dualEval?.base?.ad_performance?.visual_distinctiveness || 0,
+                  technicalQuality: dualEval?.base?.craft?.overall_craft || 0,
+                  overall: dualEval?.final_score || 0,
+                },
+              }).where(eq(generatedImages.id, imageId));
 
-                for (let j = 0; j < result.images.length; j++) {
-                  const img = result.images[j];
-                  const fileName = generateFileName(generationId, completed, img.mimeType);
-                  const relativePath = await saveImage(img.data, subDir, fileName);
+              // Emit image event for UI — use composed image URL if available
+              const displayPath = composedFilePath || relativePath;
+              send({
+                type: "image",
+                id: imageId,
+                url: getImageUrl(displayPath),
+                concept: render.brief.single_visual_idea.slice(0, 80),
+                angle: render.brief.creative_archetype,
+                level: render.brief.awareness_level,
+                emotion: render.brief.emotional_mechanic,
+                renderMode: render.brief.renderMode,
+                layout: composedAd?.layoutUsed,
+                index: i,
+                current: i + 1,
+                total: result.renders.length,
+              });
 
-                  const imageId = await saveGeneratedImage({
-                    generationId,
-                    brandId,
-                    filePath: relativePath,
-                    mimeType: img.mimeType,
-                    fileSizeBytes: img.data.length,
-                    format,
-                    personaId: personaId || undefined,
-                    tags: [format, creative.consciousnessLevel, `batch_${i + 1}`],
-                  });
-
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({
-                        type: "image",
-                        id: imageId,
-                        url: getImageUrl(relativePath),
-                        concept: creative.concept,
-                        angle: creative.creativeAngle,
-                        level: creative.consciousnessLevel,
-                        emotion: creative.emotionalHook,
-                        index: i,
-                        current: i + 1,
-                        total: creativeResult.prompts.length,
-                      })}\n\n`
-                    )
-                  );
-
-                  // Phase 3: Creative scoring with Claude Vision
-                  try {
-                    const imageBuffer = await readImage(relativePath);
-                    if (imageBuffer) {
-                      const imageBase64 = imageBuffer.toString("base64");
-                      const scores = await scoreGeneratedImage(
-                        imageBase64,
-                        img.mimeType,
-                        {
-                          prompt: creative.visualPrompt,
-                          brandName: brand.name,
-                          personaName: persona?.name,
-                        }
-                      );
-
-                      await updateImageScoreData(imageId, scores);
-
-                      controller.enqueue(
-                        encoder.encode(
-                          `data: ${JSON.stringify({
-                            type: "score",
-                            imageId,
-                            scores,
-                          })}\n\n`
-                        )
-                      );
-
-                      // Auto-iteration if score < 3
-                      if (scores.overall < 3 && (creative as Record<string, unknown>).__iterationLevel !== 2) {
-                        controller.enqueue(
-                          encoder.encode(
-                            `data: ${JSON.stringify({
-                              type: "iteration",
-                              imageId,
-                              reason: `Score global ${scores.overall}/10 — re-generation automatique`,
-                            })}\n\n`
-                          )
-                        );
-
-                        try {
-                          const improvedPromptText = await improvePrompt(
-                            creative.visualPrompt,
-                            scores,
-                            brand.name
-                          );
-
-                          const iterResult = await generateImage({
-                            prompt: improvedPromptText,
-                            aspectRatio: aspectRatio as AspectRatio,
-                            referenceImage: productReferenceImage || undefined,
-                          });
-
-                          if (iterResult.success && iterResult.images.length > 0) {
-                            const iterImg = iterResult.images[0];
-                            const iterFileName = generateFileName(generationId, completed * 10 + j + 100, iterImg.mimeType);
-                            const iterPath = await saveImage(iterImg.data, subDir, iterFileName);
-                            const currentLevel = ((creative as Record<string, unknown>).__iterationLevel as number) || 0;
-
-                            const iterImageId = await saveGeneratedImage({
-                              generationId,
-                              brandId,
-                              filePath: iterPath,
-                              mimeType: iterImg.mimeType,
-                              fileSizeBytes: iterImg.data.length,
-                              format,
-                              personaId: personaId || undefined,
-                              tags: [format, creative.consciousnessLevel, `iteration_${currentLevel + 1}`],
-                            });
-
-                            // Update iteration fields
-                            await db.update(generatedImages).set({
-                              iterationOf: imageId,
-                              iterationLevel: currentLevel + 1,
-                            }).where(eq(generatedImages.id, iterImageId));
-
-                            controller.enqueue(
-                              encoder.encode(
-                                `data: ${JSON.stringify({
-                                  type: "image",
-                                  id: iterImageId,
-                                  url: getImageUrl(iterPath),
-                                  concept: creative.concept + " (iteration amelioree)",
-                                  angle: creative.creativeAngle,
-                                  level: creative.consciousnessLevel,
-                                  emotion: creative.emotionalHook,
-                                  index: i,
-                                  current: i + 1,
-                                  total: creativeResult.prompts.length,
-                                  isIteration: true,
-                                  iterationOf: imageId,
-                                })}\n\n`
-                              )
-                            );
-
-                            // Score the iteration too
-                            const iterBuffer = await readImage(iterPath);
-                            if (iterBuffer) {
-                              const iterScores = await scoreGeneratedImage(
-                                iterBuffer.toString("base64"),
-                                iterImg.mimeType,
-                                {
-                                  prompt: improvedPromptText,
-                                  brandName: brand.name,
-                                  personaName: persona?.name,
-                                }
-                              );
-                              await updateImageScoreData(iterImageId, iterScores);
-                              controller.enqueue(
-                                encoder.encode(
-                                  `data: ${JSON.stringify({
-                                    type: "score",
-                                    imageId: iterImageId,
-                                    scores: iterScores,
-                                  })}\n\n`
-                                )
-                              );
-                            }
-                          }
-                        } catch (iterErr) {
-                          console.error("Auto-iteration error:", iterErr);
-                        }
-                      }
-                    }
-                  } catch (scoreErr) {
-                    console.error("Scoring error:", scoreErr);
-                  }
-                }
-
-                // Save prompt history
-                await savePromptHistory({
-                  generationId,
-                  compiledPrompt: creative.visualPrompt,
+              // Emit score event
+              if (dualEval) {
+                send({
+                  type: "score",
+                  imageId,
+                  scores: {
+                    base_craft: dualEval.base?.craft?.overall_craft || 0,
+                    base_ad: dualEval.base?.ad_performance?.overall_ad || 0,
+                    base_combined: dualEval.base?.combined_score || 0,
+                    composed: dualEval.composed?.overall_composed || 0,
+                    final: dualEval.final_score || 0,
+                    overall: dualEval.final_score || 0,
+                  },
                 });
-
-                completed++;
-              } else {
-                failed++;
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({
-                      type: "error",
-                      index: i,
-                      concept: creative.concept,
-                      error: result.error || "Echec de generation",
-                    })}\n\n`
-                  )
-                );
               }
-            } catch (err) {
-              failed++;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    type: "error",
-                    index: i,
-                    concept: creative.concept,
-                    error: (err as Error).message,
-                  })}\n\n`
-                )
-              );
-            }
 
-            if (i < creativeResult.prompts.length - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 2000));
+              // Save prompt history
+              await savePromptHistory({
+                generationId,
+                compiledPrompt: render.base_image.prompt_used,
+              });
+
+              completed++;
+            } catch (err) {
+              console.error(`Failed to save image ${i}:`, err);
+              failed++;
+            }
+          }
+
+          // Save ranking data on first image of the batch
+          if (result.evaluation.pairwise && result.renders.length > 0) {
+            const firstImageId = await db
+              .select({ id: generatedImages.id })
+              .from(generatedImages)
+              .where(eq(generatedImages.generationId, generationId))
+              .limit(1);
+
+            if (firstImageId[0]) {
+              await db.update(generatedImages).set({
+                rankingData: result.evaluation.pairwise as unknown as Record<string, unknown>,
+              }).where(eq(generatedImages.id, firstImageId[0].id));
             }
           }
 
           await updateGenerationStatus(generationId, "completed", {
-            actualCost: completed * 0.134,
+            actualCost: completed * 0.25,
             completedAt: new Date().toISOString(),
           });
 
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "complete",
-                generationId,
-                completed,
-                failed,
-                total: creativeResult.prompts.length,
-              })}\n\n`
-            )
-          );
+          send({
+            type: "complete",
+            generationId,
+            completed,
+            failed,
+            total: count,
+          });
         } catch (err) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: "fatal_error",
-                error: (err as Error).message,
-              })}\n\n`
-            )
-          );
+          send({
+            type: "fatal_error",
+            error: (err as Error).message,
+          });
 
           await updateGenerationStatus(generationId, "failed", {
             errorMessage: (err as Error).message,

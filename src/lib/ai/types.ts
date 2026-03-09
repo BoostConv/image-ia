@@ -23,6 +23,7 @@ export interface NanoBananaRequest {
   }>;
   generationConfig: {
     responseModalities: string[];
+    temperature?: number;
     imageSizeOptions?: {
       aspectRatio: AspectRatio;
     };

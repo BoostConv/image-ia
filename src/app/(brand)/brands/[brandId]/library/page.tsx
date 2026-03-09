@@ -55,6 +55,7 @@ export default async function BrandLibraryPage({
             tags: img.tags,
             createdAt: img.createdAt,
             scoreData: img.scoreData,
+            compiledPrompt: img.compiledPrompt || null,
           }))}
         />
       )}

@@ -261,6 +261,18 @@ export const generatedImages = sqliteTable("generated_images", {
     technicalQuality: number;
     overall: number;
   }>(),
+  // Composed ad (v2 pipeline)
+  composedFilePath: text("composed_file_path"),
+  // New engine data (6-layer pipeline)
+  creativeData: text("creative_data", { mode: "json" }).$type<{
+    brief?: Record<string, unknown>;
+    artDirection?: Record<string, unknown>;
+    evaluation?: Record<string, unknown>;
+    composedEvaluation?: Record<string, unknown>;
+    gateVerdict?: Record<string, unknown>;
+    compositionGateVerdict?: Record<string, unknown>;
+  }>(),
+  rankingData: text("ranking_data", { mode: "json" }).$type<Record<string, unknown>>(),
   iterationOf: text("iteration_of"),
   iterationLevel: integer("iteration_level").default(0),
   createdAt: text("created_at")

@@ -29,6 +29,10 @@ import {
   Megaphone,
   FileText,
   LayoutGrid,
+  Terminal,
+  Upload,
+  X,
+  Plus,
 } from "lucide-react";
 
 interface Brand {
@@ -102,7 +106,7 @@ interface BrandGenerateClientProps {
 
 const BATCH_COUNTS = [1, 3, 5, 10, 15, 20, 30, 50];
 
-type GenerationMode = "visual" | "ad";
+type GenerationMode = "visual" | "ad" | "custom";
 
 export function BrandGenerateClient({
   brand,
@@ -124,6 +128,11 @@ export function BrandGenerateClient({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // Custom mode
+  const [customPrompts, setCustomPrompts] = useState("");
+  const [customRefImages, setCustomRefImages] = useState<Array<{ name: string; base64: string }>>([]);
+  const customFileRef = useRef<HTMLInputElement>(null);
 
   // Templates
   const [templates, setTemplates] = useState<Array<{
@@ -239,17 +248,155 @@ export function BrandGenerateClient({
     }
   }, [brief]);
 
+  // Shared SSE stream reader for all modes
+  const readSSEStream = useCallback(async (response: Response) => {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      setError("Pas de stream disponible");
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+
+          switch (event.type) {
+            case "phase":
+              setPhase(event.phase);
+              setPhaseMessage(event.message);
+              break;
+            case "concepts":
+              setConcepts(event.concepts);
+              break;
+            case "progress":
+              setProgress({ current: event.current, total: event.total });
+              if (event.concept) setCurrentConcept(event.concept);
+              break;
+            case "image":
+              setGeneratedImages((prev) => [
+                {
+                  id: event.id,
+                  url: event.url,
+                  prompt: event.concept || "",
+                  concept: event.concept,
+                  angle: event.angle || event.layout,
+                  level: event.level,
+                  emotion: event.emotion,
+                },
+                ...prev,
+              ]);
+              setBatchStats((s) => ({ ...s, completed: s.completed + 1 }));
+              break;
+            case "error":
+              setBatchStats((s) => ({ ...s, failed: s.failed + 1 }));
+              break;
+            case "complete":
+              setPhase("complete");
+              setPhaseMessage(
+                `Termine ! ${event.completed} visuels generes${event.failed > 0 ? `, ${event.failed} echecs` : ""}`
+              );
+              break;
+            case "fatal_error":
+              setError(event.error);
+              break;
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }, []);
+
+  const handleAddRefImages = useCallback((files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        setCustomRefImages((prev) => [...prev, { name: file.name, base64 }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleRemoveRefImage = useCallback((index: number) => {
+    setCustomRefImages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleBatchGenerate = useCallback(async () => {
     setIsGenerating(true);
     setError(null);
     setPhase("starting");
     setPhaseMessage("Demarrage...");
     setConcepts([]);
-    setProgress({ current: 0, total: batchCount });
     setCurrentConcept("");
     setBatchStats({ completed: 0, failed: 0 });
 
     abortRef.current = new AbortController();
+
+    // ─── CUSTOM MODE: direct prompts to Gemini ─────────────────
+    if (mode === "custom") {
+      const promptLines = customPrompts
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      if (promptLines.length === 0) {
+        setError("Collez au moins un prompt");
+        setIsGenerating(false);
+        return;
+      }
+
+      setProgress({ current: 0, total: promptLines.length });
+
+      try {
+        const response = await fetch("/api/generate-custom", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            brandId: brand.id,
+            prompts: promptLines,
+            aspectRatio: selectedFormat?.aspectRatio || "1:1",
+            format: selectedFormatId,
+            globalReferenceImages: customRefImages.map((r) => r.base64),
+          }),
+          signal: abortRef.current!.signal,
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          setError(data.error || "Erreur");
+          setIsGenerating(false);
+          return;
+        }
+
+        await readSSEStream(response);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setError((err as Error).message);
+        }
+      }
+
+      setIsGenerating(false);
+      abortRef.current = null;
+      return;
+    }
+
+    // ─── STANDARD MODES (ad / visual) ──────────────────────────
+    setProgress({ current: 0, total: batchCount });
 
     // Choose endpoint based on mode
     const endpoint = mode === "ad" ? "/api/generate-ad" : "/api/generate-batch";
@@ -293,80 +440,7 @@ export function BrandGenerateClient({
         return;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        setError("Pas de stream disponible");
-        setIsGenerating(false);
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event = JSON.parse(line.slice(6));
-
-            switch (event.type) {
-              case "phase":
-                setPhase(event.phase);
-                setPhaseMessage(event.message);
-                break;
-
-              case "concepts":
-                setConcepts(event.concepts);
-                break;
-
-              case "progress":
-                setProgress({ current: event.current, total: event.total });
-                if (event.concept) setCurrentConcept(event.concept);
-                break;
-
-              case "image":
-                setGeneratedImages((prev) => [
-                  {
-                    id: event.id,
-                    url: event.url,
-                    prompt: event.concept || "",
-                    concept: event.concept,
-                    angle: event.angle || event.layout,
-                    level: event.level,
-                    emotion: event.emotion,
-                  },
-                  ...prev,
-                ]);
-                setBatchStats((s) => ({ ...s, completed: s.completed + 1 }));
-                break;
-
-              case "error":
-                setBatchStats((s) => ({ ...s, failed: s.failed + 1 }));
-                break;
-
-              case "complete":
-                setPhase("complete");
-                setPhaseMessage(
-                  `Termine ! ${event.completed} visuels generes${event.failed > 0 ? `, ${event.failed} echecs` : ""}`
-                );
-                break;
-
-              case "fatal_error":
-                setError(event.error);
-                break;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-      }
+      await readSSEStream(response);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setError((err as Error).message);
@@ -381,7 +455,7 @@ export function BrandGenerateClient({
       setPhase("complete");
       setPhaseMessage(`Multi-format termine !`);
     }
-  }, [brand.id, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds]);
+  }, [brand.id, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds, customPrompts, customRefImages, readSSEStream]);
 
   function handleCancel() {
     abortRef.current?.abort();
@@ -399,12 +473,12 @@ export function BrandGenerateClient({
     <div className="flex flex-1 overflow-hidden">
       {/* Left Panel: Config */}
       <div className="w-80 shrink-0 overflow-y-auto border-r p-4 space-y-4">
-        {/* Mode toggle: Visual vs Ad */}
+        {/* Mode toggle: Ad / Visual / Custom */}
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Mode de generation
           </label>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
             <button
               onClick={() => setMode("ad")}
               className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
@@ -427,11 +501,24 @@ export function BrandGenerateClient({
               <ImageIcon className="h-3.5 w-3.5" />
               Visuels
             </button>
+            <button
+              onClick={() => setMode("custom")}
+              className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                mode === "custom"
+                  ? "border-orange-500 bg-orange-500 text-white"
+                  : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              Custom
+            </button>
           </div>
           <p className="text-[10px] text-muted-foreground">
             {mode === "ad"
               ? "Cree de vraies pubs avec texte, produit et CTA"
-              : "Genere des visuels bruts sans texte ni composition"}
+              : mode === "visual"
+                ? "Genere des visuels bruts sans texte ni composition"
+                : "Envoyez vos propres prompts directement a Gemini"}
           </p>
         </div>
 
@@ -462,99 +549,82 @@ export function BrandGenerateClient({
 
         <Separator />
 
-        {/* Product selector */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Produit</label>
-          {products.length > 0 ? (
-            <Select
-              value={selectedProductId}
-              onValueChange={(v) => setSelectedProductId(v ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selectionner un produit" />
-              </SelectTrigger>
-              <SelectContent>
-                {products.map((product) => (
-                  <SelectItem key={product.id} value={product.id}>
-                    {product.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <a
-              href={`/brands/${brand.id}/settings`}
-              className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
-            >
-              + Ajouter un produit
-            </a>
-          )}
-        </div>
+        {mode === "custom" ? (
+          <>
+            {/* ─── CUSTOM MODE CONTROLS ─────────────────────────── */}
 
-        {/* Persona selector */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Persona</label>
-          {personas.length > 0 ? (
-            <Select
-              value={selectedPersonaId}
-              onValueChange={(v) => setSelectedPersonaId(v ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selectionner un persona" />
-              </SelectTrigger>
-              <SelectContent>
-                {personas.map((persona) => (
-                  <SelectItem key={persona.id} value={persona.id}>
-                    {persona.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <a
-              href={`/brands/${brand.id}/settings`}
-              className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
-            >
-              + Ajouter un persona
-            </a>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* Format selector */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">Format</label>
-            <button
-              onClick={() => setMultiFormatMode(!multiFormatMode)}
-              className="text-[10px] text-primary hover:underline"
-            >
-              {multiFormatMode ? "Format unique" : "Multi-format"}
-            </button>
-          </div>
-          {multiFormatMode ? (
-            <>
-              <FormatMultiSelector
-                selected={selectedFormatIds}
-                onToggle={(id) => {
-                  setSelectedFormatIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) {
-                      if (next.size > 1) next.delete(id);
-                    } else {
-                      next.add(id);
-                    }
-                    return next;
-                  });
-                }}
+            {/* Prompts textarea */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5" />
+                Prompts (1 par ligne)
+              </label>
+              <Textarea
+                value={customPrompts}
+                onChange={(e) => setCustomPrompts(e.target.value)}
+                placeholder={"Collez vos prompts ici, un par ligne.\n\nExemple:\nA sleek bottle of perfume on a marble surface, golden hour lighting, luxury editorial photography\nMinimalist flat lay of skincare products on white background, soft shadows, clean composition\nDramatic close-up of a watch face reflecting city lights at night, cinematic mood"}
+                rows={10}
+                className="text-xs font-mono"
               />
               <p className="text-[10px] text-muted-foreground">
-                {selectedFormatIds.size} format(s) — {batchCount} concepts x {selectedFormatIds.size} formats = {batchCount * selectedFormatIds.size} images
+                {customPrompts.split("\n").filter((l) => l.trim()).length} prompt(s) — envoyes directement a Gemini
               </p>
-            </>
-          ) : (
-            <>
+            </div>
+
+            <Separator />
+
+            {/* Reference images upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5" />
+                Images de reference
+              </label>
+              <p className="text-[10px] text-muted-foreground">
+                Ces images seront envoyees comme reference a Gemini pour CHAQUE prompt
+              </p>
+
+              {/* Uploaded images preview */}
+              {customRefImages.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {customRefImages.map((img, i) => (
+                    <div key={i} className="relative group">
+                      <img
+                        src={img.base64}
+                        alt={img.name}
+                        className="h-16 w-16 rounded-md object-cover border"
+                      />
+                      <button
+                        onClick={() => handleRemoveRefImage(i)}
+                        className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                      <p className="text-[8px] text-muted-foreground truncate w-16 mt-0.5">{img.name}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload button */}
+              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed p-3 cursor-pointer hover:border-primary/50 transition-colors">
+                <Upload className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Ajouter des images</span>
+                <input
+                  ref={customFileRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleAddRefImages(e.target.files)}
+                />
+              </label>
+            </div>
+
+            <Separator />
+
+            {/* Format selector (simplified for custom) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Format</label>
               <FormatSelector
                 selected={selectedFormatId}
                 onSelect={setSelectedFormatId}
@@ -564,132 +634,244 @@ export function BrandGenerateClient({
                   {selectedFormat.aspectRatio}
                 </Badge>
               )}
-            </>
-          )}
-        </div>
-
-        <Separator />
-
-        {/* Brief with auto extraction */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium flex items-center gap-1.5">
-            <FileText className="h-3.5 w-3.5" />
-            Brief
-          </label>
-          <Textarea
-            value={brief}
-            onChange={(e) => {
-              setBrief(e.target.value);
-              setExtractedConstraints(null);
-            }}
-            placeholder="Collez votre brief ici... Ex: Campagne de lancement ete 2025, focus sur la fraicheur, format story et feed, cible femmes 25-35 CSP+, promesse zero sucre..."
-            rows={4}
-            className="text-sm"
-          />
-          {brief.trim().length > 20 && !extractedConstraints && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs"
-              onClick={handleExtractBrief}
-              disabled={isExtractingBrief}
-            >
-              {isExtractingBrief ? (
-                <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-              ) : (
-                <Brain className="mr-1.5 h-3 w-3" />
-              )}
-              Extraire les contraintes avec l'IA
-            </Button>
-          )}
-          {extractedConstraints && (
-            <div className="rounded-lg border border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20 p-2.5 space-y-1.5 text-[11px]">
-              <div className="flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">
-                <CheckCircle2 className="h-3 w-3" />
-                Contraintes extraites
-              </div>
-              {extractedConstraints.keyMessage && (
-                <p className="font-medium text-foreground">{extractedConstraints.keyMessage}</p>
-              )}
-              {extractedConstraints.tone && (
-                <p><span className="text-muted-foreground">Ton :</span> {extractedConstraints.tone}</p>
-              )}
-              {extractedConstraints.targetAudience && (
-                <p><span className="text-muted-foreground">Cible :</span> {extractedConstraints.targetAudience}</p>
-              )}
-              {extractedConstraints.constraints?.length ? (
-                <div className="flex flex-wrap gap-1">
-                  {extractedConstraints.constraints.map((c, i) => (
-                    <Badge key={i} variant="secondary" className="text-[9px]">{c}</Badge>
-                  ))}
-                </div>
-              ) : null}
-              {extractedConstraints.doNots?.length ? (
-                <div className="flex flex-wrap gap-1">
-                  {extractedConstraints.doNots.map((d, i) => (
-                    <Badge key={i} variant="destructive" className="text-[9px]">{d}</Badge>
-                  ))}
-                </div>
-              ) : null}
             </div>
-          )}
-        </div>
 
-        <Separator />
+            <Separator />
+          </>
+        ) : (
+          <>
+            {/* ─── STANDARD MODE CONTROLS ───────────────────────── */}
 
-        {/* Batch count */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Nombre de visuels</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {BATCH_COUNTS.map((n) => (
-              <button
-                key={n}
-                onClick={() => setBatchCount(n)}
-                className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-                  batchCount === n
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            Cout estime : ~{(batchCount * 0.134).toFixed(2)}$ (images) + Claude
-          </p>
-        </div>
+            {/* Product selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Produit</label>
+              {products.length > 0 ? (
+                <Select
+                  value={selectedProductId}
+                  onValueChange={(v) => setSelectedProductId(v ?? "")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selectionner un produit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((product) => (
+                      <SelectItem key={product.id} value={product.id}>
+                        {product.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <a
+                  href={`/brands/${brand.id}/settings`}
+                  className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
+                >
+                  + Ajouter un produit
+                </a>
+              )}
+            </div>
 
-        <Separator />
+            {/* Persona selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Persona</label>
+              {personas.length > 0 ? (
+                <Select
+                  value={selectedPersonaId}
+                  onValueChange={(v) => setSelectedPersonaId(v ?? "")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selectionner un persona" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {personas.map((persona) => (
+                      <SelectItem key={persona.id} value={persona.id}>
+                        {persona.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <a
+                  href={`/brands/${brand.id}/settings`}
+                  className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
+                >
+                  + Ajouter un persona
+                </a>
+              )}
+            </div>
 
-        {/* Context indicators */}
-        {contextCount > 0 && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Contexte injecte
-            </label>
-            {guidelinesCount > 0 && (
-              <div className="flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-700 dark:text-blue-300">
-                <Shield className="h-3 w-3 shrink-0" />
-                {guidelinesCount} guidelines actives
+            <Separator />
+
+            {/* Format selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Format</label>
+                <button
+                  onClick={() => setMultiFormatMode(!multiFormatMode)}
+                  className="text-[10px] text-primary hover:underline"
+                >
+                  {multiFormatMode ? "Format unique" : "Multi-format"}
+                </button>
+              </div>
+              {multiFormatMode ? (
+                <>
+                  <FormatMultiSelector
+                    selected={selectedFormatIds}
+                    onToggle={(id) => {
+                      setSelectedFormatIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(id)) {
+                          if (next.size > 1) next.delete(id);
+                        } else {
+                          next.add(id);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {selectedFormatIds.size} format(s) — {batchCount} concepts x {selectedFormatIds.size} formats = {batchCount * selectedFormatIds.size} images
+                  </p>
+                </>
+              ) : (
+                <>
+                  <FormatSelector
+                    selected={selectedFormatId}
+                    onSelect={setSelectedFormatId}
+                  />
+                  {selectedFormat && (
+                    <Badge variant="outline" className="text-xs">
+                      {selectedFormat.aspectRatio}
+                    </Badge>
+                  )}
+                </>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Brief with auto extraction */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Brief
+              </label>
+              <Textarea
+                value={brief}
+                onChange={(e) => {
+                  setBrief(e.target.value);
+                  setExtractedConstraints(null);
+                }}
+                placeholder="Collez votre brief ici... Ex: Campagne de lancement ete 2025, focus sur la fraicheur, format story et feed, cible femmes 25-35 CSP+, promesse zero sucre..."
+                rows={4}
+                className="text-sm"
+              />
+              {brief.trim().length > 20 && !extractedConstraints && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={handleExtractBrief}
+                  disabled={isExtractingBrief}
+                >
+                  {isExtractingBrief ? (
+                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Brain className="mr-1.5 h-3 w-3" />
+                  )}
+                  Extraire les contraintes avec l'IA
+                </Button>
+              )}
+              {extractedConstraints && (
+                <div className="rounded-lg border border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20 p-2.5 space-y-1.5 text-[11px]">
+                  <div className="flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">
+                    <CheckCircle2 className="h-3 w-3" />
+                    Contraintes extraites
+                  </div>
+                  {extractedConstraints.keyMessage && (
+                    <p className="font-medium text-foreground">{extractedConstraints.keyMessage}</p>
+                  )}
+                  {extractedConstraints.tone && (
+                    <p><span className="text-muted-foreground">Ton :</span> {extractedConstraints.tone}</p>
+                  )}
+                  {extractedConstraints.targetAudience && (
+                    <p><span className="text-muted-foreground">Cible :</span> {extractedConstraints.targetAudience}</p>
+                  )}
+                  {extractedConstraints.constraints?.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {extractedConstraints.constraints.map((c, i) => (
+                        <Badge key={i} variant="secondary" className="text-[9px]">{c}</Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {extractedConstraints.doNots?.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {extractedConstraints.doNots.map((d, i) => (
+                        <Badge key={i} variant="destructive" className="text-[9px]">{d}</Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Batch count */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nombre de visuels</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {BATCH_COUNTS.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setBatchCount(n)}
+                    className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                      batchCount === n
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Cout estime : ~{(batchCount * 0.134).toFixed(2)}$ (images) + Claude
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Context indicators */}
+            {contextCount > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Contexte injecte
+                </label>
+                {guidelinesCount > 0 && (
+                  <div className="flex items-center gap-2 rounded-md bg-blue-500/10 px-2.5 py-1.5 text-xs text-blue-700 dark:text-blue-300">
+                    <Shield className="h-3 w-3 shrink-0" />
+                    {guidelinesCount} guidelines actives
+                  </div>
+                )}
+                {documentsPrompt && (
+                  <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-700 dark:text-green-300">
+                    <BookOpen className="h-3 w-3 shrink-0" />
+                    Documents de marque
+                  </div>
+                )}
+                {inspirationPrompt && (
+                  <div className="flex items-center gap-2 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs text-purple-700 dark:text-purple-300">
+                    <Sparkles className="h-3 w-3 shrink-0" />
+                    Inspirations publicitaires
+                  </div>
+                )}
               </div>
             )}
-            {documentsPrompt && (
-              <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-xs text-green-700 dark:text-green-300">
-                <BookOpen className="h-3 w-3 shrink-0" />
-                Documents de marque
-              </div>
-            )}
-            {inspirationPrompt && (
-              <div className="flex items-center gap-2 rounded-md bg-purple-500/10 px-2.5 py-1.5 text-xs text-purple-700 dark:text-purple-300">
-                <Sparkles className="h-3 w-3 shrink-0" />
-                Inspirations publicitaires
-              </div>
-            )}
-          </div>
+
+            <Separator />
+          </>
         )}
-
-        <Separator />
 
         {/* Generate button */}
         {isGenerating ? (
@@ -706,14 +888,18 @@ export function BrandGenerateClient({
             className="w-full"
             size="lg"
             onClick={handleBatchGenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || (mode === "custom" && !customPrompts.trim())}
           >
             {mode === "ad" ? (
               <Megaphone className="mr-2 h-4 w-4" />
+            ) : mode === "custom" ? (
+              <Terminal className="mr-2 h-4 w-4" />
             ) : (
               <Sparkles className="mr-2 h-4 w-4" />
             )}
-            Generer {batchCount} {mode === "ad" ? "ads" : "visuels"}
+            {mode === "custom"
+              ? `Generer ${customPrompts.split("\n").filter((l) => l.trim()).length} image(s)`
+              : `Generer ${batchCount} ${mode === "ad" ? "ads" : "visuels"}`}
           </Button>
         )}
 
