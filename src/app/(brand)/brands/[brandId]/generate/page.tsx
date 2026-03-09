@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { notFound } from "next/navigation";
 import { getBrandById, getBrandProducts, getBrandPersonas } from "@/lib/db/queries/brands";
 import { getActiveGuidelines, compileGuidelinesPrompt } from "@/lib/db/queries/guidelines";

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { notFound } from "next/navigation";
 import { getBrandById } from "@/lib/db/queries/brands";
 import { getBrandImages } from "@/lib/db/queries/generations";

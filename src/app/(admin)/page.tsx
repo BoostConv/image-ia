@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import Link from "next/link";
 import { getAllBrands } from "@/lib/db/queries/brands";
 import { getBrandImageStats } from "@/lib/db/queries/generations";
