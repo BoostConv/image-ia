@@ -1,11 +1,11 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, real, boolean, jsonb } from "drizzle-orm/pg-core";
 
 // ============================================================
 // MODULE 1: BRAND BRAIN
 // ============================================================
 
-export const brands = sqliteTable("brands", {
+export const brands = pgTable("brands", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -15,38 +15,38 @@ export const brands = sqliteTable("brands", {
   vision: text("vision"),
   positioning: text("positioning"),
   tone: text("tone"),
-  values: text("values", { mode: "json" }).$type<string[]>(),
+  values: jsonb("values").$type<string[]>(),
   targetMarket: text("target_market"),
   // Visual identity
-  colorPalette: text("color_palette", { mode: "json" }).$type<{
+  colorPalette: jsonb("color_palette").$type<{
     primary: string;
     secondary: string;
     accent: string;
     neutrals: string[];
   }>(),
-  typography: text("typography", { mode: "json" }).$type<{
+  typography: jsonb("typography").$type<{
     headingFont: string;
     bodyFont: string;
     accentFont?: string;
   }>(),
-  moodboardPaths: text("moodboard_paths", { mode: "json" }).$type<string[]>(),
+  moodboardPaths: jsonb("moodboard_paths").$type<string[]>(),
   styleGuideText: text("style_guide_text"),
   websiteUrl: text("website_url"),
-  scrapedData: text("scraped_data", { mode: "json" }).$type<{
+  scrapedData: jsonb("scraped_data").$type<{
     angles: string[];
     promises: string[];
     socialProof: string[];
     tone: string;
   }>(),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
   updatedAt: text("updated_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const products = sqliteTable("products", {
+export const products = pgTable("products", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -54,14 +54,14 @@ export const products = sqliteTable("products", {
   name: text("name").notNull(),
   category: text("category"),
   usp: text("usp"),
-  benefits: text("benefits", { mode: "json" }).$type<string[]>(),
-  objections: text("objections", { mode: "json" }).$type<string[]>(),
+  benefits: jsonb("benefits").$type<string[]>(),
+  objections: jsonb("objections").$type<string[]>(),
   pricing: text("pricing"),
   positioning: text("positioning"),
   season: text("season"),
   usageContext: text("usage_context"),
-  imagePaths: text("image_paths", { mode: "json" }).$type<string[]>(),
-  marketingArguments: text("marketing_arguments", { mode: "json" }).$type<{
+  imagePaths: jsonb("image_paths").$type<string[]>(),
+  marketingArguments: jsonb("marketing_arguments").$type<{
     headlines: string[];
     hooks: string[];
     callToActions: string[];
@@ -72,30 +72,30 @@ export const products = sqliteTable("products", {
   targetAudience: text("target_audience"),
   competitiveAdvantage: text("competitive_advantage"),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const personas = sqliteTable("personas", {
+export const personas = pgTable("personas", {
   id: text("id").primaryKey(),
   brandId: text("brand_id").references(() => brands.id, {
     onDelete: "set null",
   }),
   name: text("name").notNull(),
   description: text("description"),
-  demographics: text("demographics", { mode: "json" }).$type<{
+  demographics: jsonb("demographics").$type<{
     ageRange: string;
     gender?: string;
     location?: string;
     income?: string;
     lifestyle?: string;
   }>(),
-  psychographics: text("psychographics", { mode: "json" }).$type<{
+  psychographics: jsonb("psychographics").$type<{
     painPoints: string[];
     motivations: string[];
     aesthetic: string;
   }>(),
-  visualStyle: text("visual_style", { mode: "json" }).$type<{
+  visualStyle: jsonb("visual_style").$type<{
     colorTone: string;
     photographyStyle: string;
     lightingPreference: string;
@@ -104,9 +104,9 @@ export const personas = sqliteTable("personas", {
     decorStyle?: string;
   }>(),
   promptModifiers: text("prompt_modifiers"),
-  isGlobal: integer("is_global", { mode: "boolean" }).default(false),
+  isGlobal: boolean("is_global").default(false),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -114,7 +114,7 @@ export const personas = sqliteTable("personas", {
 // BRAND DOCUMENTS & INSPIRATION
 // ============================================================
 
-export const brandDocuments = sqliteTable("brand_documents", {
+export const brandDocuments = pgTable("brand_documents", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -124,30 +124,30 @@ export const brandDocuments = sqliteTable("brand_documents", {
   filePath: text("file_path").notNull(),
   mimeType: text("mime_type").notNull(),
   fileSizeBytes: integer("file_size_bytes"),
-  extractedText: text("extracted_text"), // Text extracted from PDF/doc
-  summary: text("summary"), // AI-generated summary of the document
-  keyInsights: text("key_insights", { mode: "json" }).$type<string[]>(),
+  extractedText: text("extracted_text"),
+  summary: text("summary"),
+  keyInsights: jsonb("key_insights").$type<string[]>(),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const inspirationAds = sqliteTable("inspiration_ads", {
+export const inspirationAds = pgTable("inspiration_ads", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
     .references(() => brands.id, { onDelete: "cascade" }),
   name: text("name"),
-  source: text("source"), // "brand" | "competitor" | "inspiration"
+  source: text("source"),
   competitorName: text("competitor_name"),
   filePath: text("file_path").notNull(),
   mimeType: text("mime_type").notNull(),
-  analysis: text("analysis"), // AI-generated analysis of what makes this ad effective
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
-  rating: integer("rating"), // 1-5 stars
-  notes: text("notes"), // User notes about why this ad is good
+  analysis: text("analysis"),
+  tags: jsonb("tags").$type<string[]>(),
+  rating: integer("rating"),
+  notes: text("notes"),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -155,43 +155,43 @@ export const inspirationAds = sqliteTable("inspiration_ads", {
 // GUIDELINES & LEARNING
 // ============================================================
 
-export const guidelines = sqliteTable("guidelines", {
+export const guidelines = pgTable("guidelines", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
     .references(() => brands.id, { onDelete: "cascade" }),
-  category: text("category").notNull(), // "composition" | "color" | "copy" | "platform" | "performance" | "brand_rules" | "ad_psychology"
+  category: text("category").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  examples: text("examples", { mode: "json" }).$type<string[]>(),
+  examples: jsonb("examples").$type<string[]>(),
   priority: integer("priority").default(0),
-  isActive: integer("is_active", { mode: "boolean" }).default(true),
-  source: text("source").default("manual"), // "manual" | "learned" | "imported"
+  isActive: boolean("is_active").default(true),
+  source: text("source").default("manual"),
   performanceScore: real("performance_score"),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
   updatedAt: text("updated_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const adKnowledge = sqliteTable("ad_knowledge", {
+export const adKnowledge = pgTable("ad_knowledge", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
     .references(() => brands.id, { onDelete: "cascade" }),
-  category: text("category").notNull(), // "winning_pattern" | "avoid_pattern" | "style_insight" | "format_insight"
+  category: text("category").notNull(),
   insight: text("insight").notNull(),
   confidence: real("confidence").default(0.5),
   basedOnApproved: integer("based_on_approved").default(0),
   basedOnRejected: integer("based_on_rejected").default(0),
-  relatedPromptElements: text("related_prompt_elements", { mode: "json" }).$type<string[]>(),
+  relatedPromptElements: jsonb("related_prompt_elements").$type<string[]>(),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
   updatedAt: text("updated_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -199,14 +199,14 @@ export const adKnowledge = sqliteTable("ad_knowledge", {
 // MODULE 2: CREATIVE ENGINE
 // ============================================================
 
-export const generations = sqliteTable("generations", {
+export const generations = pgTable("generations", {
   id: text("id").primaryKey(),
   brandId: text("brand_id").references(() => brands.id),
   productId: text("product_id").references(() => products.id),
   personaId: text("persona_id").references(() => personas.id),
-  mode: text("mode").notNull(), // "single" | "batch" | "brief" | "reference"
-  status: text("status").notNull().default("pending"), // "pending" | "generating" | "completed" | "failed"
-  promptLayers: text("prompt_layers", { mode: "json" }).$type<{
+  mode: text("mode").notNull(),
+  status: text("status").notNull().default("pending"),
+  promptLayers: jsonb("prompt_layers").$type<{
     brand: string;
     persona: string;
     brief: string;
@@ -221,17 +221,17 @@ export const generations = sqliteTable("generations", {
   referenceImagePath: text("reference_image_path"),
   creativeDistance: real("creative_distance"),
   originalBrief: text("original_brief"),
-  extractedConstraints: text("extracted_constraints", { mode: "json" }),
+  extractedConstraints: jsonb("extracted_constraints"),
   estimatedCost: real("estimated_cost"),
   actualCost: real("actual_cost"),
   errorMessage: text("error_message"),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
   completedAt: text("completed_at"),
 });
 
-export const generatedImages = sqliteTable("generated_images", {
+export const generatedImages = pgTable("generated_images", {
   id: text("id").primaryKey(),
   generationId: text("generation_id")
     .notNull()
@@ -245,11 +245,11 @@ export const generatedImages = sqliteTable("generated_images", {
   fileSizeBytes: integer("file_size_bytes"),
   format: text("format"),
   personaId: text("persona_id").references(() => personas.id),
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
-  status: text("status").default("pending"), // "pending" | "approved" | "rejected"
+  tags: jsonb("tags").$type<string[]>(),
+  status: text("status").default("pending"),
   preferenceScore: real("preference_score"),
   galleryId: text("gallery_id"),
-  scoreData: text("score_data", { mode: "json" }).$type<{
+  scoreData: jsonb("score_data").$type<{
     composition: number;
     colorHarmony: number;
     emotionalImpact: number;
@@ -261,10 +261,8 @@ export const generatedImages = sqliteTable("generated_images", {
     technicalQuality: number;
     overall: number;
   }>(),
-  // Composed ad (v2 pipeline)
   composedFilePath: text("composed_file_path"),
-  // New engine data (6-layer pipeline)
-  creativeData: text("creative_data", { mode: "json" }).$type<{
+  creativeData: jsonb("creative_data").$type<{
     brief?: Record<string, unknown>;
     artDirection?: Record<string, unknown>;
     evaluation?: Record<string, unknown>;
@@ -272,11 +270,11 @@ export const generatedImages = sqliteTable("generated_images", {
     gateVerdict?: Record<string, unknown>;
     compositionGateVerdict?: Record<string, unknown>;
   }>(),
-  rankingData: text("ranking_data", { mode: "json" }).$type<Record<string, unknown>>(),
+  rankingData: jsonb("ranking_data").$type<Record<string, unknown>>(),
   iterationOf: text("iteration_of"),
   iterationLevel: integer("iteration_level").default(0),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -284,7 +282,7 @@ export const generatedImages = sqliteTable("generated_images", {
 // MODULE 3: REVIEW LOOP
 // ============================================================
 
-export const galleries = sqliteTable("galleries", {
+export const galleries = pgTable("galleries", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -292,34 +290,34 @@ export const galleries = sqliteTable("galleries", {
   name: text("name").notNull(),
   description: text("description"),
   shareToken: text("share_token").unique().notNull(),
-  brandingConfig: text("branding_config", { mode: "json" }).$type<{
+  brandingConfig: jsonb("branding_config").$type<{
     logoPath?: string;
     primaryColor?: string;
     headerText?: string;
   }>(),
   expiresAt: text("expires_at"),
-  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  isActive: boolean("is_active").default(true),
   viewCount: integer("view_count").default(0),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const reviews = sqliteTable("reviews", {
+export const reviews = pgTable("reviews", {
   id: text("id").primaryKey(),
   imageId: text("image_id")
     .notNull()
     .references(() => generatedImages.id, { onDelete: "cascade" }),
   galleryId: text("gallery_id").references(() => galleries.id),
-  reviewerType: text("reviewer_type").notNull(), // "client" | "consultant"
-  verdict: text("verdict").notNull(), // "approved" | "rejected" | "revision"
+  reviewerType: text("reviewer_type").notNull(),
+  verdict: text("verdict").notNull(),
   comment: text("comment"),
   suggestedPromptChange: text("suggested_prompt_change"),
   appliedToGenerationId: text("applied_to_generation_id").references(
     () => generations.id
   ),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -327,7 +325,7 @@ export const reviews = sqliteTable("reviews", {
 // MODULE 4: PREFERENCES + LIBRARY
 // ============================================================
 
-export const preferenceScores = sqliteTable("preference_scores", {
+export const preferenceScores = pgTable("preference_scores", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -336,15 +334,13 @@ export const preferenceScores = sqliteTable("preference_scores", {
   dimensionValue: text("dimension_value").notNull(),
   score: real("score").notNull().default(0),
   sampleCount: integer("sample_count").default(0),
-  isManualOverride: integer("is_manual_override", { mode: "boolean" }).default(
-    false
-  ),
+  isManualOverride: boolean("is_manual_override").default(false),
   updatedAt: text("updated_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
-export const promptHistory = sqliteTable("prompt_history", {
+export const promptHistory = pgTable("prompt_history", {
   id: text("id").primaryKey(),
   generationId: text("generation_id")
     .notNull()
@@ -352,7 +348,7 @@ export const promptHistory = sqliteTable("prompt_history", {
   compiledPrompt: text("compiled_prompt").notNull(),
   resultRating: integer("result_rating"),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
 
@@ -360,7 +356,7 @@ export const promptHistory = sqliteTable("prompt_history", {
 // CAMPAIGN TEMPLATES
 // ============================================================
 
-export const campaignTemplates = sqliteTable("campaign_templates", {
+export const campaignTemplates = pgTable("campaign_templates", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -374,6 +370,6 @@ export const campaignTemplates = sqliteTable("campaign_templates", {
   brief: text("brief"),
   batchCount: integer("batch_count").default(5),
   createdAt: text("created_at")
-    .default(sql`(CURRENT_TIMESTAMP)`)
+    .default(sql`NOW()`)
     .notNull(),
 });
