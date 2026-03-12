@@ -2,6 +2,351 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, integer, real, boolean, jsonb } from "drizzle-orm/pg-core";
 
 // ============================================================
+// BRAND BRIEF V1 — Type Definitions
+// ============================================================
+
+export interface IdentiteFondamentale {
+  vision: string;
+  mission: string;
+  combatEnnemi: string;       // Ce contre quoi la marque lutte
+  histoireMarque: string;     // Genèse, fondateurs, moments clés
+  valeurs: Array<{
+    name: string;
+    signification: string;
+    preuve: string;           // Brevet, certification, chiffre
+  }>;
+}
+
+export interface PositionnementStrategique {
+  propositionValeur: string;
+  positionnementPrix: {
+    niveau: "entree" | "milieu" | "moyen_haut" | "premium" | "luxe";
+    prixMoyen?: number;
+    justification: string;
+  };
+  elementDistinctif: string;
+  avantagesConcurrentiels: string[];
+  tensionsPositionnement: string[];
+}
+
+export interface TonCommunication {
+  tonDominant: string[];       // 2-3 adjectifs
+  registresEncourages: string[];
+  registresAEviter: string[];
+  vocabulaireRecurrent: string[];
+  redLines: string[];          // Ce que la marque ne doit JAMAIS dire
+}
+
+export interface BriefMetadata {
+  gaps: Array<{ field: string; reason: string; severity: "warning" | "critical" }>;
+  sources: Record<string, string>;
+  generatedAt: string;
+  confidence: number;
+}
+
+export type BriefStatus = "draft" | "complete" | "incomplete";
+
+export interface BrandBrief {
+  identiteFondamentale: IdentiteFondamentale;
+  positionnementStrategique: PositionnementStrategique;
+  tonCommunication: TonCommunication;
+  metadata: BriefMetadata;
+  status: BriefStatus;
+}
+
+// ============================================================
+// COUCHE 2 — ANALYSE PRODUIT
+// ============================================================
+
+export interface FABBenefit {
+  feature: string;           // Caractéristique technique
+  advantage: string;         // Avantage fonctionnel
+  benefit: string;           // Bénéfice émotionnel/transformationnel
+  proofPoints: string[];     // Preuves (études, certifications, chiffres)
+}
+
+export interface USPTriptyque {
+  usp: string;               // Unique Selling Proposition
+  ump: string;               // Unique Marketing Proposition
+  ums: string;               // Unique Mechanism Story
+}
+
+export interface DURProblem {
+  description: string;
+  douloureux: number;        // 1-10
+  urgent: number;            // 1-10
+  reconnu: number;           // 1-10
+  totalScore: number;        // Calculé
+}
+
+export interface ValueEquation {
+  dreamOutcome: string;
+  perceivedLikelihood: number;  // 1-10
+  timeDelay: string;
+  effortSacrifice: string;
+  score: number;
+}
+
+export interface BeforeAfter {
+  dimension: string;         // "Physique" | "Émotionnel" | "Social" | "Financier"
+  before: string;
+  after: string;
+  timeframe: string;
+}
+
+export interface ProductObjection {
+  objection: string;
+  type: "prix" | "confiance" | "urgence" | "besoin" | "autorite";
+  reponse: string;
+  preuve: string;
+}
+
+export interface SalesArgument {
+  argument: string;
+  cible: string;             // Persona ou segment
+  contexte: string;          // Quand utiliser
+  force: number;             // 1-10
+}
+
+export interface CompetitorInsight {
+  competitor: string;
+  strengths: string[];
+  weaknesses: string[];
+  ourAdvantage: string;
+}
+
+export interface ReviewInsights {
+  topPraises: string[];
+  topComplaints: string[];
+  unexpectedUseCases: string[];
+  emotionalQuotes: string[];
+}
+
+export interface ProductAnalysisMetadata {
+  generatedAt: string;
+  sources: string[];
+  confidence: number;
+  gaps: Array<{ field: string; reason: string }>;
+}
+
+export interface ProductAnalysis {
+  fabBenefits: FABBenefit[];
+  uspTriptyque: USPTriptyque;
+  durProblems: DURProblem[];
+  valueEquation: ValueEquation;
+  beforeAfter: BeforeAfter[];
+  objections: ProductObjection[];
+  salesArguments: SalesArgument[];
+  competitorInsights: CompetitorInsight[];
+  reviewInsights: ReviewInsights;
+  analysisMetadata: ProductAnalysisMetadata;
+}
+
+// ============================================================
+// COUCHE 3 — ANGLES MARKETING (FRAMEWORK EPIC)
+// ============================================================
+
+export type EPICType = "emotional" | "practical" | "identity" | "critical";
+
+export interface TerrainAnalysis {
+  awareness: "unaware" | "problem_aware" | "solution_aware" | "product_aware" | "most_aware";
+  sophistication: 1 | 2 | 3 | 4 | 5;
+  temperature: "cold" | "warm" | "hot";
+  dominantEmotion: string;
+  barriers: string[];
+}
+
+export interface MarketingHook {
+  text: string;
+  type: "question" | "statement" | "story" | "statistic" | "challenge";
+  targetEmotion: string;
+  strength: number;           // 1-10
+}
+
+export interface Narrative {
+  structure: "PAS" | "AIDA" | "BAB" | "4Ps" | "StoryBrand";
+  opening: string;
+  conflict: string;
+  resolution: string;
+  cta: string;
+  fullScript: string;
+}
+
+export interface VisualDirectionSpec {
+  mood: string;
+  colorTone: string;
+  imageryStyle: string;
+  modelDirection: string;
+}
+
+export interface EstimatedPerformance {
+  engagementScore: number;
+  conversionPotential: number;
+  fatigueRisk: number;
+}
+
+export interface AngleMetadata {
+  generatedAt: string;
+  basedOn: string[];        // Sources utilisées
+  confidence: number;
+}
+
+export interface MarketingAngleSpec {
+  id: string;
+  name: string;
+  epicType: EPICType;
+  terrain: TerrainAnalysis;
+  coreBenefit: string;
+  targetPersonaIds: string[];  // Liens vers personas
+  hooks: MarketingHook[];
+  narratives: Narrative[];
+  visualDirection: VisualDirectionSpec;
+  estimatedPerformance: EstimatedPerformance;
+  metadata: AngleMetadata;
+}
+
+export interface AnglePriority {
+  angleId: string;
+  priority: "high" | "medium" | "low";
+  reason: string;
+  suggestedBudgetPercent: number;
+}
+
+export interface AngleSynergy {
+  angleIds: [string, string];
+  synergyType: string;
+  recommendation: string;
+}
+
+export interface AnglesPrioritization {
+  productId: string;
+  angles: MarketingAngleSpec[];
+  priorityMatrix: AnglePriority[];
+  synergies: AngleSynergy[];
+}
+
+// ============================================================
+// COUCHE 4 — PERSONA RICHE
+// ============================================================
+
+export interface DesireLevel {
+  level: 1 | 2 | 3 | 4 | 5;
+  description: string;
+  // 1: Surface (ce qu'ils disent vouloir)
+  // 2: Fonctionnel (ce qu'ils veulent vraiment)
+  // 3: Émotionnel (comment ils veulent se sentir)
+  // 4: Identitaire (qui ils veulent devenir)
+  // 5: Existentiel (sens profond)
+}
+
+export interface DefensePsychology {
+  primaryDefense: string;           // Mécanisme de défense dominant
+  resistancePatterns: string[];     // Patterns de résistance à l'achat
+  trustBuilders: string[];          // Ce qui construit la confiance
+  decisionStyle: "impulsif" | "analytique" | "social" | "emotionnel";
+  riskTolerance: "faible" | "modere" | "eleve";
+}
+
+export interface LanguageProfile {
+  vocabularyLevel: "simple" | "intermediaire" | "sophistique";
+  preferredTone: string[];
+  triggerWords: string[];           // Mots qui captent l'attention
+  avoidWords: string[];             // Mots qui repoussent
+  metaphorsResonant: string[];      // Métaphores qui parlent
+  socialProofType: "experts" | "pairs" | "celebrities" | "statistics";
+}
+
+export interface SituationalTrigger {
+  situation: string;                // Contexte de vie
+  trigger: string;                  // Déclencheur d'achat
+  emotion: string;                  // Émotion dominante
+  urgency: number;                  // 1-10
+  bestAngleType: EPICType;          // Meilleur type d'angle
+}
+
+export interface PersonaDemographics {
+  ageRange: string;
+  gender: string;
+  location: string;
+  income: string;
+  profession: string;
+  familyStatus: string;
+  education: string;
+}
+
+export interface PersonaPsychographics {
+  desires: DesireLevel[];         // 5 niveaux
+  fears: string[];
+  frustrations: string[];
+  aspirations: string[];
+  values: string[];
+  beliefs: string[];              // Croyances limitantes et habilitantes
+}
+
+export interface DigitalBehavior {
+  platforms: string[];
+  contentPreferences: string[];
+  peakActivityTimes: string[];
+  devicePreference: "mobile" | "desktop" | "tablet";
+  attentionSpan: "court" | "moyen" | "long";
+}
+
+export interface CustomerJourney {
+  awarenessChannels: string[];
+  researchBehavior: string;
+  decisionFactors: string[];
+  postPurchaseBehavior: string;
+}
+
+export interface AngleAffinity {
+  angleId: string;
+  affinityScore: number;          // 1-10
+  reason: string;
+}
+
+export interface PersonaMetadata {
+  generatedAt: string;
+  basedOn: string[];
+  confidence: number;
+  gaps: Array<{ field: string; reason: string }>;
+}
+
+export interface RichPersona {
+  // Identité de base
+  id: string;
+  name: string;
+  avatar: string;                   // Description visuelle ou URL
+  tagline: string;                  // "La mère active qui..."
+
+  // Démographie
+  demographics: PersonaDemographics;
+
+  // Psychographie profonde
+  psychographics: PersonaPsychographics;
+
+  // Psychologie d'achat
+  buyingPsychology: DefensePsychology;
+
+  // Profil linguistique
+  languageProfile: LanguageProfile;
+
+  // Triggers situationnels
+  situationalTriggers: SituationalTrigger[];
+
+  // Comportement digital
+  digitalBehavior: DigitalBehavior;
+
+  // Parcours client
+  customerJourney: CustomerJourney;
+
+  // Liens avec angles marketing
+  angleAffinities: AngleAffinity[];
+
+  // Metadata
+  metadata: PersonaMetadata;
+}
+
+// ============================================================
 // MODULE 1: BRAND BRAIN
 // ============================================================
 
@@ -38,6 +383,56 @@ export const brands = pgTable("brands", {
     socialProof: string[];
     tone: string;
   }>(),
+
+  // ============================================================
+  // BRAND BRIEF V1 — Auto-generated strategic brief
+  // ============================================================
+
+  // A. Identité Fondamentale
+  identiteFondamentale: jsonb("identite_fondamentale").$type<{
+    vision: string;
+    mission: string;
+    combatEnnemi: string;       // Ce contre quoi la marque lutte
+    histoireMarque: string;     // Genèse, fondateurs, moments clés
+    valeurs: Array<{
+      name: string;
+      signification: string;
+      preuve: string;           // Brevet, certification, chiffre
+    }>;
+  }>(),
+
+  // B. Positionnement Stratégique
+  positionnementStrategique: jsonb("positionnement_strategique").$type<{
+    propositionValeur: string;
+    positionnementPrix: {
+      niveau: "entree" | "milieu" | "moyen_haut" | "premium" | "luxe";
+      prixMoyen?: number;
+      justification: string;
+    };
+    elementDistinctif: string;
+    avantagesConcurrentiels: string[];
+    tensionsPositionnement: string[];
+  }>(),
+
+  // G. Ton & Communication
+  tonCommunication: jsonb("ton_communication").$type<{
+    tonDominant: string[];       // 2-3 adjectifs
+    registresEncourages: string[];
+    registresAEviter: string[];
+    vocabulaireRecurrent: string[];
+    redLines: string[];          // Ce que la marque ne doit JAMAIS dire
+  }>(),
+
+  // Metadata
+  briefMetadata: jsonb("brief_metadata").$type<{
+    gaps: Array<{ field: string; reason: string; severity: "warning" | "critical" }>;
+    sources: Record<string, string>;
+    generatedAt: string;
+    confidence: number;
+  }>(),
+
+  briefStatus: text("brief_status").$type<"draft" | "complete" | "incomplete">().default("draft"),
+
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),
@@ -71,6 +466,8 @@ export const products = pgTable("products", {
   }>(),
   targetAudience: text("target_audience"),
   competitiveAdvantage: text("competitive_advantage"),
+  // COUCHE 2 — Analyse produit complète
+  productAnalysis: jsonb("product_analysis").$type<ProductAnalysis>(),
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),
@@ -105,9 +502,32 @@ export const personas = pgTable("personas", {
   }>(),
   promptModifiers: text("prompt_modifiers"),
   isGlobal: boolean("is_global").default(false),
+  // COUCHE 4 — Persona riche
+  richProfile: jsonb("rich_profile").$type<RichPersona>(),
+  linkedAngles: jsonb("linked_angles").$type<string[]>(),
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),
+});
+
+// ============================================================
+// COUCHE 3 — MARKETING ANGLES TABLE
+// ============================================================
+
+export const marketingAngles = pgTable("marketing_angles", {
+  id: text("id").primaryKey(),
+  productId: text("product_id").references(() => products.id, {
+    onDelete: "cascade",
+  }),
+  brandId: text("brand_id").references(() => brands.id, {
+    onDelete: "cascade",
+  }),
+  angles: jsonb("angles").$type<MarketingAngleSpec[]>(),
+  prioritization: jsonb("prioritization").$type<AnglesPrioritization>(),
+  createdAt: text("created_at")
+    .default(sql`NOW()`)
+    .notNull(),
+  updatedAt: text("updated_at"),
 });
 
 // ============================================================
@@ -269,6 +689,34 @@ export const generatedImages = pgTable("generated_images", {
     composedEvaluation?: Record<string, unknown>;
     gateVerdict?: Record<string, unknown>;
     compositionGateVerdict?: Record<string, unknown>;
+    prompt_used?: string;
+    // ── v3 flat taxonomy fields (for learning & analytics) ──
+    format_family?: string;
+    layout_family?: string;
+    proof_mechanism?: string;
+    awareness_stage?: string;
+    render_family?: string;
+    ad_job?: string;
+    visual_style?: string;
+    style_mode?: string;
+    rupture_structure?: string;
+    graphic_tension?: string;
+    marketing_lever?: string;
+    human_presence?: string;
+    product_role?: string;
+    // ── v3 critic scores (pre-render quality signal) ──
+    critic_score?: number;
+    critic_stop_scroll?: number;
+    critic_message_clarity?: number;
+    critic_ad_likeness?: number;
+    critic_proof_strength?: number;
+    // ── v3 concept metadata ──
+    headline?: string;
+    cta?: string;
+    belief_shift?: string;
+    customer_insight?: string;
+    learning_hypothesis?: string;
+    engine_version?: string;
   }>(),
   rankingData: jsonb("ranking_data").$type<Record<string, unknown>>(),
   iterationOf: text("iteration_of"),

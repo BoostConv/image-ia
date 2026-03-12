@@ -1,12 +1,36 @@
 // ============================================================
-// ENGINE TYPES — Pipeline v2
-// A: ContextFilter → J: BatchLocker → B: CreativePlanner →
-// C: ArtDirector → D: PromptBuilder → E: Renderer →
-// H1: RenderGate → G: Composer → H2: CompositionGate →
-// K: DualEvaluator → F: Ranking
+// ENGINE TYPES — Pipeline v3
+// A: ContextFilter → J: BatchLocker → B: ConceptPlanner →
+// B2: CreativeCritic → C: AdDirector → D: PromptBuilder →
+// E: Renderer → H1: RenderGate → G: AdComposer →
+// H2: CompositionGate → K: DualEvaluator → F: Ranking
 // ============================================================
 
+import type {
+  AdJob,
+  FormatFamily,
+  LayoutFamily,
+  ProofMechanism,
+  RuptureStructure,
+  GraphicTension,
+  RenderFamily,
+  HumanPresence,
+  VisualStyle,
+  StyleMode,
+  AwarenessStage,
+  MarketingLever,
+} from "./taxonomy";
+
 // ─── RAW INPUT (from DB) ────────────────────────────────────
+
+import type {
+  ProductAnalysis,
+  RichPersona,
+  MarketingAngleSpec,
+  IdentiteFondamentale,
+  PositionnementStrategique,
+  TonCommunication,
+} from "../db/schema";
 
 export interface RawPipelineInput {
   brand: {
@@ -20,6 +44,10 @@ export interface RawPipelineInput {
     targetMarket?: string;
     colorPalette?: { primary: string; secondary: string; accent: string; neutrals?: string[] };
     typography?: { headingFont: string; bodyFont: string; accentFont?: string };
+    // V1 Brief fields
+    identiteFondamentale?: IdentiteFondamentale;
+    positionnementStrategique?: PositionnementStrategique;
+    tonCommunication?: TonCommunication;
   };
   product?: {
     name: string;
@@ -38,6 +66,8 @@ export interface RawPipelineInput {
     targetAudience?: string;
     competitiveAdvantage?: string;
     imagePaths?: string[];
+    // COUCHE 2 — Product Analysis
+    analysis?: ProductAnalysis;
   };
   persona?: {
     name: string;
@@ -62,7 +92,11 @@ export interface RawPipelineInput {
       modelType?: string;
       decorStyle?: string;
     };
+    // COUCHE 4 — Rich Persona
+    richProfile?: RichPersona;
   };
+  // COUCHE 3 — Marketing Angle (selected for this generation)
+  marketingAngle?: MarketingAngleSpec;
   brief?: string;
   format: string;
   aspectRatio: string;
@@ -72,6 +106,8 @@ export interface RawPipelineInput {
   inspirationPrompt?: string;
   /** "clean" = no-text image + SVG overlay, "complete_ad" = full ad with text generated natively */
   renderStrategy?: "clean" | "complete_ad";
+  /** Additional reference images uploaded by user (already decoded to Buffer) */
+  additionalReferenceImages?: Buffer[];
 }
 
 // ─── A: FILTERED CONTEXT ────────────────────────────────────
@@ -95,10 +131,34 @@ export interface FilteredContext {
   product_name: string;
   product_key_benefit: string;
   brand_name: string;
+  // V1 Brief additions
+  red_lines?: string[];  // Hard constraints: things the brand must NEVER say/show
+  brand_combat?: string;  // What the brand fights against (ennemi)
+  brand_values?: Array<{ name: string; signification: string }>;
+
+  // COUCHE 2 — Product Analysis
+  product_fab_benefits?: string;      // Top FAB benefits formatted
+  product_usp_triptyque?: string;     // USP/UMP/UMS formatted
+  product_objections?: string;        // Key objections and responses
+  product_value_equation?: string;    // Value equation summary
+
+  // COUCHE 3 — Marketing Angle
+  angle_epic_type?: string;           // emotional/practical/identity/critical
+  angle_core_benefit?: string;        // The core benefit of the selected angle
+  angle_hooks?: string[];             // Pre-written hooks from the angle
+  angle_narrative?: string;           // Selected narrative structure
+  angle_terrain?: string;             // Awareness + temperature summary
+
+  // COUCHE 4 — Rich Persona
+  persona_desires?: string;           // 5-level desires formatted
+  persona_triggers?: string;          // Situational triggers
+  persona_language_profile?: string;  // Trigger words, tone preferences
+  persona_decision_style?: string;    // How they make decisions
 }
 
-// ─── B: CREATIVE BRIEF ─────────────────────────────────────
+// ─── B: CREATIVE BRIEF (v2 — @deprecated, use ConceptSpec) ──
 
+/** @deprecated Use ConceptSpec instead. Kept for backward compat during migration. */
 // Creative archetype is now a FREE string — Claude assigns whatever
 // visual approach best serves the marketing angle. No predefined list.
 export type CreativeArchetypeId = string;
@@ -131,6 +191,7 @@ export type MarketingAngle =
   | "urgency"         // Act now or lose out
   | "guilt_relief";   // Remove the guilt of a current behavior
 
+/** @deprecated Use ConceptSpec instead. Kept for backward compat during migration. */
 export interface CreativeBrief {
   // ─── CUSTOMER-FIRST STRATEGY ─────────────────────────
   customer_insight: string;         // The specific customer truth this ad exploits
@@ -164,8 +225,158 @@ export interface CreativeBrief {
   textDensity?: TextDensity;
 }
 
-// ─── C: ART DIRECTION ───────────────────────────────────────
+// ─── B v3: CONCEPT SPEC (replaces CreativeBrief) ────────────
+// The new structured concept specification with closed taxonomies.
+// Every field is either a taxonomy value or a well-typed string.
 
+export interface ConceptSpec {
+  // ─── STRATEGY (the ad's mission) ──────────────────────
+  ad_job: AdJob;                           // Primary mission in funnel
+  format_family: FormatFamily;             // Structural blueprint
+  awareness_stage: AwarenessStage;         // Customer awareness level
+  marketing_lever: MarketingLever;         // Psychological lever (secondary to ad_job)
+
+  // ─── BELIEF ARCHITECTURE ──────────────────────────────
+  belief_shift: string;                    // "FROM [current belief] → TO [new belief]"
+  proof_mechanism: ProofMechanism;         // How the ad proves its claim
+  proof_text?: string;                     // Visible proof copy (e.g., "4.8★ · 12 000 avis")
+
+  // ─── VISUAL DIRECTION ────────────────────────────────
+  layout_family: LayoutFamily;             // How the ad is composed
+  render_family: RenderFamily;             // Photo vs Design vs Hybrid
+  rupture_structure: RuptureStructure;     // The visual scroll-stop device
+  graphic_tension: GraphicTension;         // Compositional tension
+  visual_style: VisualStyle;              // Controlled aesthetic mode
+  style_mode: StyleMode;                  // Brand compatibility tier
+  human_presence: HumanPresence;          // None / hand / face / body
+
+  // ─── SCENE DESCRIPTION ───────────────────────────────
+  visual_device: string;                   // The ONE visual idea (3-4 sentences, scene only)
+  product_role: "hero" | "supporting" | "contextual" | "absent";
+  background_treatment: "minimal" | "contextual" | "storytelling" | "abstract" | "gradient";
+  contrast_principle: string;              // What visual tension drives the composition
+
+  // ─── COPY & MODULES ──────────────────────────────────
+  headline: string;                        // 3-8 words, tied to marketing lever
+  cta: string;                             // 2-5 words, never "acheter maintenant"
+  offer_module?: string;                   // e.g., "-20% avec REBELLE20" or null
+  text_zone_spec: "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+  // ─── CUSTOMER INTELLIGENCE ───────────────────────────
+  customer_insight: string;                // Deep customer truth (not product benefit)
+  learning_hypothesis: string;             // "If this ad performs, it means..."
+
+  // ─── PRE-RENDER SCORING (planner self-assessment) ────
+  novelty_score: number;                   // 1-10: How fresh/surprising is this concept?
+  clarity_score: number;                   // 1-10: How instantly readable?
+  brand_fit_score: number;                 // 1-10: How aligned with brand codes?
+
+  // ─── RENDER PROPERTIES ───────────────────────────────
+  render_mode: RenderMode;                 // scene_first | product_first
+  overlay_intent: OverlayIntent;           // headline_cta | badge_proof | minimal | full_ad
+  text_density: TextDensity;               // none | low | medium | high
+  realism_target: "photorealistic" | "stylized_photo" | "editorial" | "graphic_design" | "mixed_media";
+
+  // ─── BATCH LOCKING ───────────────────────────────────
+  campaign_thesis?: string;
+  locked_promise?: string;
+  locked_proof?: string;
+
+  // ─── STYLE REFERENCE ─────────────────────────────────
+  style_reference?: string;                // Description of the visual reference or mood
+}
+
+// ─── B2: CRITIC SCORES ──────────────────────────────────────
+// Pre-render evaluation to filter weak concepts before rendering.
+
+export interface CriticScores {
+  // ─── 10 evaluation criteria (1-10) ────────────────────
+  stop_scroll: number;           // Will this stop the scroll in 0.3s?
+  message_clarity: number;       // Is the message instantly readable?
+  ad_likeness: number;          // Does this look like a real Meta ad?
+  proof_strength: number;       // Is the proof mechanism credible?
+  visual_hierarchy: number;     // Is there a clear reading order?
+  thumb_readability: number;    // Readable at mobile thumb size?
+  product_visibility: number;   // Is the product prominent enough?
+  brand_fit: number;            // Consistent with brand codes?
+  novelty: number;              // Fresh vs. already-seen?
+  renderability: number;        // Can an AI image model execute this well?
+  confusion_risk: number;       // 1=clear, 10=very confusing (inverted)
+
+  // ─── Computed ─────────────────────────────────────────
+  composite_score: number;      // Weighted average of above
+  pass: boolean;                // Above threshold?
+  rejection_reason?: string;    // Why it failed (if !pass)
+}
+
+export interface ScoredConcept {
+  concept: ConceptSpec;
+  scores: CriticScores;
+  rank: number;
+}
+
+// ─── C v3: AD DIRECTOR SPEC (replaces ArtDirection) ─────────
+// Directs a META AD, not just a photo shoot.
+
+export interface AdDirectorSpec {
+  // ─── AD STRUCTURE (reading path) ─────────────────────
+  reading_order: string;         // "eye_path: attention_anchor → headline → proof → CTA"
+  eye_path: string;              // Description of the visual scanning path
+  attention_anchor: string;      // What grabs the eye first
+  grid_system: string;           // e.g., "3-column, product right-third, copy left-third"
+
+  // ─── AD MODULES (pub components) ─────────────────────
+  headline_container_style: string;  // e.g., "white pill on dark gradient, 48px bold"
+  proof_block_style?: string;        // e.g., "5-star chip, yellow, bottom-left"
+  offer_module_position?: string;    // e.g., "floating ribbon, top-right, red"
+  cta_prominence: "subtle" | "medium" | "dominant";
+  brand_bar?: string;               // e.g., "8px bottom strip, brand primary color"
+
+  // ─── PRODUCT DIRECTION ───────────────────────────────
+  product_scale: number;         // 0.0-1.0, proportion in frame
+  product_placement: string;     // e.g., "right-third, slightly below center"
+  product_anchoring: ProductAnchoring;
+
+  // ─── VISUAL DIRECTION (from v2, preserved) ───────────
+  composition: string;
+  focal_point: string;
+  camera: string;
+  framing: string;
+  lighting: string;
+  environment: string;
+  color_direction: string;
+  texture_priority: string;
+  prop_list: string[];
+
+  // ─── ZONES & SPACE ───────────────────────────────────
+  safe_zone: { position: string; percentage: number };
+  overlay_map: OverlayMap;
+  negative_space_shape?: string;  // e.g., "L-shaped void at top-left for headline stack"
+
+  // ─── CONSTRAINTS ─────────────────────────────────────
+  text_density_budget: TextDensity;
+  character_budget_headline: number;  // Max chars for headline
+  must_keep: string[];
+  avoid: string[];
+
+  // ─── RENDER-FAMILY SPECIFIC ──────────────────────────
+  // photo_led: full photo specs
+  // design_led: gradient, geometry, blocks
+  // hybrid: mix of both
+  render_family_specs?: {
+    gradient_spec?: string;      // For design_led: "linear 135deg, #1a1a2e → #16213e"
+    geometry_elements?: string;  // For design_led: "circle behind product, geometric lines"
+    photo_scene_spec?: string;   // For photo_led: full scene description
+    blend_mode?: string;        // For hybrid: how photo + design merge
+  };
+
+  // ─── REFERENCE STRATEGY ──────────────────────────────
+  reference_strategy: ReferenceStrategy;
+}
+
+// ─── C: ART DIRECTION (v2 — @deprecated, use AdDirectorSpec) ─
+
+/** @deprecated Use AdDirectorSpec instead. Kept for backward compat during migration. */
 export interface ArtDirection {
   composition: string;
   focal_point: string;
@@ -349,6 +560,10 @@ export interface CopyAssets {
   badge?: string;
   cta?: string;
   brandName: string;
+  // v3 enrichments from ConceptSpec
+  offer?: string;        // e.g., "-20% avec REBELLE20"
+  rating?: string;       // e.g., "4.8★ · 12 000 avis"
+  ingredient?: string;   // e.g., "Enrichi en vitamine C"
 }
 
 export type LayoutZoneId =
@@ -375,10 +590,11 @@ export interface LayoutZone {
 }
 
 export interface LayoutTemplate {
-  id: string;
+  id: string;  // Now matches LayoutFamily from taxonomy.ts
   name: string;
   zones: LayoutZone[];
-  applicableTo: CreativeArchetypeId[];
+  /** @deprecated — selection is now by LayoutFamily direct match */
+  applicableTo?: CreativeArchetypeId[];
   safeZonePosition: string;
   productAnchor?: "center" | "left" | "right" | "top" | "bottom";
 }
@@ -394,6 +610,10 @@ export interface ComposerInput {
   textDensity: TextDensity;
   copyAssets: CopyAssets;
   aspectRatio: string;
+  // v3 additions for taxonomy-driven module selection
+  layoutFamily?: string;        // Direct layout selection by LayoutFamily
+  proofMechanism?: string;      // For proof module selection
+  formatFamily?: string;        // For module selection
 }
 
 export interface CollisionReport {
@@ -454,8 +674,14 @@ export type PipelineEvent =
   | { type: "phase"; phase: string; message: string }
   | { type: "context_filtered"; context: FilteredContext }
   | { type: "batch_locked"; lock: BatchLockConfig }
+  // v2 (deprecated)
   | { type: "briefs_generated"; briefs: CreativeBrief[] }
   | { type: "art_direction"; index: number; direction: ArtDirection }
+  // v3 (new)
+  | { type: "concepts_generated"; concepts: ConceptSpec[] }
+  | { type: "concepts_scored"; scored: ScoredConcept[]; kept: number; rejected: number }
+  | { type: "ad_direction"; index: number; direction: AdDirectorSpec }
+  // shared
   | { type: "prompt_built"; index: number; prompt_preview: string }
   | { type: "render_pass_1"; index: number; success: boolean }
   | { type: "render_pass_2"; index: number; success: boolean }

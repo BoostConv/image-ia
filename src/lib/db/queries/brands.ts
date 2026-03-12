@@ -30,6 +30,45 @@ export async function createBrand(data: {
   moodboardPaths?: string[];
   styleGuideText?: string;
   websiteUrl?: string;
+  // V1 Brief fields
+  mission?: string;
+  vision?: string;
+  positioning?: string;
+  tone?: string;
+  values?: string[];
+  targetMarket?: string;
+  identiteFondamentale?: {
+    vision: string;
+    mission: string;
+    combatEnnemi: string;
+    histoireMarque: string;
+    valeurs: Array<{ name: string; signification: string; preuve: string }>;
+  };
+  positionnementStrategique?: {
+    propositionValeur: string;
+    positionnementPrix: {
+      niveau: "entree" | "milieu" | "moyen_haut" | "premium" | "luxe";
+      prixMoyen?: number;
+      justification: string;
+    };
+    elementDistinctif: string;
+    avantagesConcurrentiels: string[];
+    tensionsPositionnement: string[];
+  };
+  tonCommunication?: {
+    tonDominant: string[];
+    registresEncourages: string[];
+    registresAEviter: string[];
+    vocabulaireRecurrent: string[];
+    redLines: string[];
+  };
+  briefMetadata?: {
+    gaps: Array<{ field: string; reason: string; severity: "warning" | "critical" }>;
+    sources: Record<string, string>;
+    generatedAt: string;
+    confidence: number;
+  };
+  briefStatus?: "draft" | "complete" | "incomplete";
 }) {
   const id = nanoid();
   await db.insert(brands).values({ id, ...data });
@@ -69,10 +108,18 @@ export async function createProduct(data: {
   positioning?: string;
   season?: string;
   usageContext?: string;
+  productAnalysis?: typeof products.$inferInsert.productAnalysis;
 }) {
   const id = nanoid();
   await db.insert(products).values({ id, ...data });
   return id;
+}
+
+export async function updateProduct(
+  id: string,
+  data: Partial<typeof products.$inferInsert>
+) {
+  await db.update(products).set(data).where(eq(products.id, id));
 }
 
 export async function getProductById(id: string) {
@@ -126,6 +173,8 @@ export async function createPersona(data: {
   };
   promptModifiers?: string;
   isGlobal?: boolean;
+  richProfile?: typeof personas.$inferInsert.richProfile;
+  linkedAngles?: typeof personas.$inferInsert.linkedAngles;
 }) {
   const id = nanoid();
   await db.insert(personas).values({ id, ...data });
