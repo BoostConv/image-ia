@@ -174,15 +174,53 @@ Tu DOIS penser dans cet ORDRE :
    EXCELLENT : "DE 'Les bonbons bio sont fades' → VERS 'REBELLE prouve que bio = explosion de saveurs'"
    NUL : "DE 'pas bien' → VERS 'bien'"
 
-3. **headline** = 3-8 mots PERCUTANTS lies au marketing_lever. Court. Brutal. Memorable.
+3. **customer_insight** = Une VERITE sur la VIE du client, PAS un benefice produit.
 
-4. **cta** = 2-5 mots, JAMAIS "acheter maintenant" ou "en savoir plus".
+4. **Chaque concept = RADICALEMENT different** : levier different, scene differente, emotion differente.
 
-5. **customer_insight** = Une VERITE sur la VIE du client, PAS un benefice produit.
+5. **Tous les champs taxonomiques DOIVENT venir des listes fermees ci-dessous.**
 
-6. **Chaque concept = RADICALEMENT different** : levier different, scene differente, emotion differente.
+## COPY REQUIREMENTS (Phase 5+ — FRANCAIS OBLIGATOIRE)
 
-7. **Tous les champs taxonomiques DOIVENT venir des listes fermees ci-dessous.**
+=== HEADLINE (obligatoire) ===
+- FRANCAIS uniquement
+- Entre 2 et 15 mots (ideal: 3-8 mots)
+- Maximum 2-3 lignes visuellement
+- DOIT etre IMPACTANT, direct, memorable
+- Si persona_language_profile fourni, utiliser les trigger words
+- Lie au marketing_lever choisi
+
+EXEMPLES DE HEADLINES IMPACTANTS:
+- "Fini les nuits blanches" (4 mots, probleme resolu)
+- "Et si vous osiez enfin?" (5 mots, question provocatrice)
+- "Le secret des pros" (4 mots, exclusivite)
+- "Votre peau vous dit merci" (5 mots, benefice emotionnel)
+- "Pourquoi ils l'adorent tous" (5 mots, social proof)
+- "Ce que personne ne vous dit" (6 mots, curiosite)
+
+EVITER:
+- Headlines generiques ou plats
+- Plus de 15 mots
+- Anglicismes non necessaires
+
+=== SUBTITLE (optionnel) ===
+- FRANCAIS uniquement
+- Entre 5 et 25 mots
+- Developpe/enrichit le headline si necessaire
+- Ajoute contexte ou preuve
+
+=== CTA (obligatoire) ===
+- FRANCAIS uniquement
+- 2-5 mots
+- JAMAIS "Acheter maintenant", "Cliquez ici", "En savoir plus"
+- Doit creer urgence ou curiosite
+
+EXEMPLES DE CTA ORIGINAUX:
+- "Je veux essayer" (3 mots, engagement personnel)
+- "Voir le resultat" (3 mots, curiosite)
+- "C'est pour moi" (3 mots, identification)
+- "Decouvrir le secret" (3 mots, mystere)
+- "Oui, je me lance" (4 mots, decision)
 
 ${formatTaxonomyForPrompt()}
 
@@ -200,7 +238,9 @@ Emotion exploitable: ${context.emotional_angle}
 Niveau de conscience: ${awareness}
 ${context.persona_desires ? `\nDESIRS PERSONA (5 niveaux): ${context.persona_desires}` : ""}
 ${context.persona_triggers ? `TRIGGERS: ${context.persona_triggers}` : ""}
-${context.persona_language_profile ? `PROFIL LINGUISTIQUE: ${context.persona_language_profile}` : ""}
+${context.persona_language_profile ? `\n=== PROFIL LINGUISTIQUE PERSONA (UTILISER POUR LE COPY) ===
+${context.persona_language_profile}
+→ UTILISE ces trigger words et ce ton dans les headlines et CTA!` : ""}
 ${context.persona_decision_style ? `STYLE DECISION: ${context.persona_decision_style}` : ""}
 
 === LE PRODUIT ===

@@ -433,6 +433,9 @@ export const brands = pgTable("brands", {
 
   briefStatus: text("brief_status").$type<"draft" | "complete" | "incomplete">().default("draft"),
 
+  // PHASE 5+ — Brand Style Images (visuels de reference pour le style marque)
+  brandStyleImages: jsonb("brand_style_images").$type<string[]>(),
+
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),
@@ -817,6 +820,37 @@ export const campaignTemplates = pgTable("campaign_templates", {
   aspectRatio: text("aspect_ratio"),
   brief: text("brief"),
   batchCount: integer("batch_count").default(5),
+  createdAt: text("created_at")
+    .default(sql`NOW()`)
+    .notNull(),
+});
+
+// ============================================================
+// PHASE 5+ — LAYOUT INSPIRATIONS (Screenshots Meta Ads)
+// ============================================================
+
+export type LayoutFamily =
+  | "left_copy_right_product"
+  | "center_hero_top_claim"
+  | "split_screen"
+  | "card_stack"
+  | "quote_frame"
+  | "badge_cluster"
+  | "vertical_story_stack"
+  | "diagonal_split"
+  | "hero_with_bottom_offer"
+  | "macro_with_side_copy";
+
+export const layoutInspirations = pgTable("layout_inspirations", {
+  id: text("id").primaryKey(),
+  layoutFamily: text("layout_family").$type<LayoutFamily>().notNull(),
+  name: text("name").notNull(),
+  imagePath: text("image_path").notNull(),
+  description: text("description"),
+  gridSystem: text("grid_system"), // "3-column: left 45% | center 10% | right 45%"
+  readingOrder: text("reading_order"), // "Z-pattern: headline → product → CTA"
+  bestFor: jsonb("best_for").$type<string[]>(), // ["before_after", "comparison"]
+  brandId: text("brand_id").references(() => brands.id, { onDelete: "cascade" }), // null = global
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),

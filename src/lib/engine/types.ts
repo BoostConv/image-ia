@@ -108,6 +108,8 @@ export interface RawPipelineInput {
   renderStrategy?: "clean" | "complete_ad";
   /** Additional reference images uploaded by user (already decoded to Buffer) */
   additionalReferenceImages?: Buffer[];
+  /** Brand style reference images (Phase 5+) — paths to pre-uploaded brand style visuals */
+  brandStyleImagePaths?: string[];
 }
 
 // ─── A: FILTERED CONTEXT ────────────────────────────────────
@@ -436,8 +438,88 @@ export interface BuiltPrompt {
 
 export interface SelectedReference {
   path: string;
-  role: "product_fidelity" | "texture_material" | "packaging" | "usage" | "style_mood" | "inspiration";
+  role: "product_fidelity" | "texture_material" | "packaging" | "usage" | "style_mood" | "inspiration" | "layout_structure" | "brand_style";
   buffer?: Buffer;
+}
+
+// ─── D2: AD COPY (Phase 5+) ────────────────────────────────
+
+export interface AdCopy {
+  headline: {
+    text: string;           // 2-15 mots
+    wordCount: number;
+    lines: number;          // 2-3 lignes max
+    tone: string;           // "urgent" | "inspirant" | "provocateur"
+  };
+  subtitle?: {
+    text: string;           // 5-25 mots
+    wordCount: number;
+  };
+  cta: {
+    text: string;           // 2-5 mots
+    urgency: "low" | "medium" | "high";
+  };
+  proofText?: string;       // "4.8★ · 12,000 avis"
+  offerModule?: string;     // "-20% avec CODE20"
+}
+
+// ─── D3: AD-FOCUSED PROMPT STRUCTURE (Phase 5+) ──────────────
+
+export interface AdPromptStructure {
+  // === MISSION (pourquoi cette image existe) ===
+  adJob: string;              // scroll_stop | educate | prove | convert
+  adPurpose: string;          // "Stop scroll en 0.3s en montrant..."
+  beliefShift: {
+    from: string;             // "Je pense que..."
+    to: string;               // "Je comprends que..."
+  };
+
+  // === COPY (texte a superposer) ===
+  copy: {
+    headline: string;         // 2-15 mots, francais, impactant
+    subtitle?: string;        // 5-25 mots optionnel
+    cta: string;              // 2-5 mots
+  };
+
+  // === LAYOUT (structure visuelle) ===
+  layout: {
+    family: string;           // split_screen, hero_product, etc.
+    gridSystem: string;       // "3-column: left 45% copy | right 50% product"
+    readingOrder: string;     // "Z-pattern: headline → product → CTA"
+    safeZones: {
+      headline: string;       // "top-left 40%"
+      cta: string;            // "bottom-right 20%"
+      forbidden: string[];    // ["center product area"]
+    };
+  };
+
+  // === FOCUS (hierarchie visuelle) ===
+  focus: {
+    attentionAnchor: string;  // "Le produit en gros plan"
+    eyePath: string;          // "Produit → headline → CTA"
+    productRole: string;      // "hero" | "supporting" | "subtle"
+    productPlacement: string; // "right-third, 40% frame"
+  };
+
+  // === SCENE (ambiance, decor) ===
+  scene: {
+    visualDevice: string;     // Description de la scene
+    environment: string;      // Decor, props
+    lighting: string;         // Eclairage
+    mood: string;             // Atmosphere
+    colorTone: string;        // Palette
+  };
+
+  // === REFERENCES ===
+  references: {
+    product: SelectedReference[];     // Images produit
+    layoutInspiration?: Buffer;       // Screenshot layout
+    brandStyle?: Buffer[];            // Visuels marque
+    styleDescription?: string;        // Comment utiliser les refs
+  };
+
+  // === INTERDITS ===
+  avoid: string[];            // Liste des interdits
 }
 
 export interface ImageGenerationConfig {

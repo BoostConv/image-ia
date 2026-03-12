@@ -38,7 +38,20 @@ export async function POST(request: NextRequest) {
       aspectRatio = "1:1",
       count = 5,
       renderStrategy = "complete_ad",
-    } = body;
+      selectedImagePaths,
+      additionalRefImages,
+    } = body as {
+      brandId: string;
+      productId?: string;
+      personaId?: string;
+      brief?: string;
+      format?: string;
+      aspectRatio?: string;
+      count?: number;
+      renderStrategy?: string;
+      selectedImagePaths?: string[];
+      additionalRefImages?: string[];
+    };
 
     if (!brandId) {
       return new Response(
@@ -69,7 +82,7 @@ export async function POST(request: NextRequest) {
       personaId: personaId || undefined,
       mode: "batch",
       promptLayers: { brand: "", persona: "", brief: brief || "", format: "", custom: "" },
-      compiledPrompt: `[ENGINE v2] pipeline A→J→B→C→D→E→H1→G→H2→K→F x${count}`,
+      compiledPrompt: `[ENGINE v3.1] pipeline A→J→B→B2→C(v3)→D(v3)→E→H1→G(v3)→H2→K→F x${count}`,
       format,
       aspectRatio,
       estimatedCost: count * 0.25,
@@ -90,6 +103,10 @@ export async function POST(request: NextRequest) {
         targetMarket: brand.targetMarket || undefined,
         colorPalette: brand.colorPalette || undefined,
         typography: brand.typography || undefined,
+        // V1 Brief fields
+        identiteFondamentale: brand.identiteFondamentale || undefined,
+        positionnementStrategique: brand.positionnementStrategique || undefined,
+        tonCommunication: brand.tonCommunication || undefined,
       },
       product: product
         ? {
@@ -101,7 +118,10 @@ export async function POST(request: NextRequest) {
             marketingArguments: product.marketingArguments || undefined,
             targetAudience: product.targetAudience || undefined,
             competitiveAdvantage: product.competitiveAdvantage || undefined,
-            imagePaths: (product.imagePaths as string[]) || undefined,
+            // Use user-selected images if provided, otherwise all product images
+            imagePaths: selectedImagePaths?.length
+              ? selectedImagePaths
+              : (product.imagePaths as string[]) || undefined,
           }
         : undefined,
       persona: persona
@@ -121,6 +141,15 @@ export async function POST(request: NextRequest) {
       documentsPrompt: documentsPrompt || undefined,
       inspirationPrompt: inspirationPrompt || undefined,
       renderStrategy: renderStrategy as "clean" | "complete_ad",
+      // Additional reference images uploaded by user (base64 → Buffer)
+      additionalReferenceImages: additionalRefImages?.length
+        ? additionalRefImages.map((b64: string) => {
+            const clean = b64.replace(/^data:image\/[^;]+;base64,/, "");
+            return Buffer.from(clean, "base64");
+          })
+        : undefined,
+      // Brand style images (Phase 5+)
+      brandStyleImagePaths: brand.brandStyleImages || undefined,
     };
 
     const encoder = new TextEncoder();
@@ -144,6 +173,22 @@ export async function POST(request: NextRequest) {
                     type: "phase",
                     phase: "J",
                     message: `Batch verrouillé: ${event.lock.campaignThesis.slice(0, 60)}...`,
+                  });
+                  break;
+
+                case "concepts_generated":
+                  send({
+                    type: "phase",
+                    phase: "B",
+                    message: `${event.concepts.length} concepts générés (sur-génération pour filtrage)`,
+                  });
+                  break;
+
+                case "concepts_scored":
+                  send({
+                    type: "phase",
+                    phase: "B2",
+                    message: `Critique: ${event.kept} retenus, ${event.rejected} rejetés`,
                   });
                   break;
 
@@ -279,7 +324,13 @@ export async function POST(request: NextRequest) {
                 ],
               });
 
-              // Save full creative data (brief + art direction + evaluations + gates)
+              // Save full creative data (brief + art direction + evaluations + gates + v3 taxonomy)
+              const conceptIdx = render.concept_index ?? i;
+              const concept = result.keptConcepts[conceptIdx];
+              const scoredConcept = result.scoredConcepts.find(
+                (sc) => sc.concept === concept
+              );
+
               await db.update(generatedImages).set({
                 composedFilePath: composedFilePath || null,
                 creativeData: {
@@ -289,6 +340,34 @@ export async function POST(request: NextRequest) {
                   composedEvaluation: dualEval?.composed as unknown as Record<string, unknown>,
                   gateVerdict: renderGate as unknown as Record<string, unknown>,
                   compositionGateVerdict: compositionGateVerdict as unknown as Record<string, unknown>,
+                  prompt_used: render.base_image.prompt_used,
+                  // ── v3 flat taxonomy fields (for learning & analytics) ──
+                  format_family: concept?.format_family,
+                  layout_family: concept?.layout_family,
+                  proof_mechanism: concept?.proof_mechanism,
+                  awareness_stage: concept?.awareness_stage,
+                  render_family: concept?.render_family,
+                  ad_job: concept?.ad_job,
+                  visual_style: concept?.visual_style,
+                  style_mode: concept?.style_mode,
+                  rupture_structure: concept?.rupture_structure,
+                  graphic_tension: concept?.graphic_tension,
+                  marketing_lever: concept?.marketing_lever,
+                  human_presence: concept?.human_presence,
+                  product_role: concept?.product_role,
+                  // ── v3 critic scores ──
+                  critic_score: scoredConcept?.scores?.composite_score,
+                  critic_stop_scroll: scoredConcept?.scores?.stop_scroll,
+                  critic_message_clarity: scoredConcept?.scores?.message_clarity,
+                  critic_ad_likeness: scoredConcept?.scores?.ad_likeness,
+                  critic_proof_strength: scoredConcept?.scores?.proof_strength,
+                  // ── v3 concept metadata ──
+                  headline: concept?.headline,
+                  cta: concept?.cta,
+                  belief_shift: concept?.belief_shift,
+                  customer_insight: concept?.customer_insight,
+                  learning_hypothesis: concept?.learning_hypothesis,
+                  engine_version: "v3.1",
                 },
                 // Bridge old scoreData format for backward compatibility
                 scoreData: {
