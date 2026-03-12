@@ -6,6 +6,7 @@ import type {
   PairwiseRanking,
   BatchEvaluation,
 } from "./types";
+import { callClaudeWithRetry } from "../ai/claude-retry";
 
 // ============================================================
 // LAYER F: EVALUATOR
@@ -30,7 +31,7 @@ export async function evaluateImage(
     ? "image/png" as const
     : "image/jpeg" as const;
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     system: `Tu es un evaluateur expert en publicite Meta (Facebook/Instagram) et en qualite d'image publicitaire. Tu evalues chaque image sur 2 axes independants :
@@ -91,7 +92,7 @@ Hook vise: ${result.brief.hook_type}
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -180,12 +181,12 @@ Promesse a communiquer : ${context.promise}
 }`,
   });
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     system: "Tu es un media buyer expert Meta ads. Compare des variantes publicitaires et designe les meilleures. Reponds UNIQUEMENT en JSON valide.",
     messages: [{ role: "user", content: imageContents }],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -215,9 +216,13 @@ export async function evaluateBatch(
 ): Promise<BatchEvaluation> {
   // Score each image individually
   const individualScores: ImageEvaluation[] = [];
-  for (const result of results) {
-    const score = await evaluateImage(result, context);
+  for (let i = 0; i < results.length; i++) {
+    const score = await evaluateImage(results[i], context);
     individualScores.push(score);
+    // Small delay between sequential evaluations to avoid rate limits
+    if (i < results.length - 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
   // Pairwise ranking

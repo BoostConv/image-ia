@@ -7,27 +7,35 @@ import type {
 } from "./types";
 
 // ============================================================
-// COMPONENT I: RENDER MODE ROUTER
-// Deterministic assignment of renderMode, overlayIntent, textDensity.
-// No AI call — pure mapping logic.
+// COMPONENT I: RENDER MODE ROUTER (v2 — DEPRECATED)
 //
-// Now based on marketing_angle + hook_type + realism_target
-// instead of fixed archetype IDs.
+// These v2 functions operate on CreativeBrief and are NO LONGER
+// called by the v3 pipeline. The v3 equivalents live inside
+// creative-planner.ts and operate on ConceptSpec:
+//
+//   - assignRenderModeV3(concept, hasProductImages) → RenderMode
+//   - assignOverlayIntentV3(concept) → OverlayIntent
+//   - assignTextDensityV3(concept) → TextDensity
+//
+// The v3 versions use closed taxonomies (render_family,
+// format_family, awareness_stage) instead of free-form
+// marketing_angle strings.
+//
+// These v2 functions are kept ONLY for backward compatibility
+// with code paths that still use CreativeBrief (e.g. concept-adapter).
+// They will be removed once all downstream consumers migrate to v3.
 // ============================================================
 
 /**
- * Assign render mode based on hook type and context.
- * product_first: only when product fidelity is the main message.
- * scene_first: for everything creative/narrative (default).
+ * @deprecated Use assignRenderModeV3 in creative-planner.ts instead.
+ * v3 uses ConceptSpec.render_family + product_role for routing.
  */
 export function assignRenderMode(
   brief: CreativeBrief,
   _context: FilteredContext,
   hasProductImages: boolean
 ): RenderMode {
-  // Product-first only for explicit product-showcase hooks with product images
   if (hasProductImages && brief.realism_target === "photorealistic") {
-    // Only use product_first for angles that center on the product itself
     if (brief.marketing_angle === "objection" || brief.marketing_angle === "curiosity") {
       return "product_first";
     }
@@ -36,10 +44,10 @@ export function assignRenderMode(
 }
 
 /**
- * Assign overlay intent based on marketing angle and hook type.
+ * @deprecated Use assignOverlayIntentV3 in creative-planner.ts instead.
+ * v3 maps directly from format_family + awareness_stage.
  */
 export function assignOverlayIntent(brief: CreativeBrief): OverlayIntent {
-  // Emotional and aspirational ads: let the image speak, minimal text
   if (
     brief.marketing_angle === "desire" ||
     brief.marketing_angle === "aspiration" ||
@@ -48,7 +56,6 @@ export function assignOverlayIntent(brief: CreativeBrief): OverlayIntent {
     return "minimal";
   }
 
-  // Social proof and urgency need proof badges
   if (
     brief.marketing_angle === "social_proof" ||
     brief.marketing_angle === "urgency"
@@ -56,7 +63,6 @@ export function assignOverlayIntent(brief: CreativeBrief): OverlayIntent {
     return "badge_proof";
   }
 
-  // Fear, objection, disruption need full ad treatment with clear messaging
   if (
     brief.marketing_angle === "fear" ||
     brief.marketing_angle === "objection" ||
@@ -65,15 +71,14 @@ export function assignOverlayIntent(brief: CreativeBrief): OverlayIntent {
     return "full_ad";
   }
 
-  // Default: headline + CTA
   return "headline_cta";
 }
 
 /**
- * Assign text density based on marketing angle.
+ * @deprecated Use assignTextDensityV3 in creative-planner.ts instead.
+ * v3 maps directly from format_family.
  */
 export function assignTextDensity(brief: CreativeBrief): TextDensity {
-  // Visual-first angles: let the scene speak
   if (
     brief.marketing_angle === "desire" ||
     brief.marketing_angle === "aspiration" ||
@@ -82,7 +87,6 @@ export function assignTextDensity(brief: CreativeBrief): TextDensity {
     return "low";
   }
 
-  // Rational angles: need text to support the argument
   if (
     brief.marketing_angle === "objection" ||
     brief.marketing_angle === "fear" ||
@@ -95,7 +99,8 @@ export function assignTextDensity(brief: CreativeBrief): TextDensity {
 }
 
 /**
- * Assign all render properties to a brief in one call.
+ * @deprecated Use ConceptSpec fields directly — render_mode, overlay_intent,
+ * text_density are set by the v3 planner at concept creation time.
  */
 export function assignRenderProperties(
   brief: CreativeBrief,

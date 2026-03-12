@@ -1,112 +1,29 @@
-import type { LayoutTemplate, CreativeArchetypeId } from "./types";
+import type { LayoutTemplate } from "./types";
 
 // ============================================================
-// LAYOUT TEMPLATES — 10 templates for the Composer
-// Each template = array of LayoutZone with positions in %
-// of canvas + margins + priority. Zones are placed by the
-// Composer and collision-detected.
+// LAYOUT TEMPLATES v3 — Aligned on LayoutFamily taxonomy
 //
-// Updated for narrative archetypes.
+// Each template ID matches a LayoutFamily value from taxonomy.ts.
+// Selection is now DIRECT: concept.layout_family → template ID.
+//
+// 10 templates × LayoutZone positions in % of canvas.
+// Zones are placed by the Composer with collision detection.
 // ============================================================
-
-const ALL_ARCHETYPES: CreativeArchetypeId[] = [
-  "immersive_world",
-  "epic_confrontation",
-  "character_adventure",
-  "surreal_scale",
-  "luxury_staging",
-  "pop_culture_twist",
-  "sensory_explosion",
-  "absurd_humor",
-  "emotional_snapshot",
-  "graphic_statement",
-  "transformation_story",
-  "social_proof_scene",
-];
 
 export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
-  // 1. Hero Headline Right — product left, headline + CTA right
+  // ─── 1. left_copy_right_product ─────────────────────────
+  // Copy stack (headline + proof + CTA) on the left, product hero on the right.
+  // Good for: problem_solution, objection_crusher, comparison.
   {
-    id: "hero_headline_right",
-    name: "Hero Headline Right",
-    zones: [
-      {
-        id: "product",
-        x: 5,
-        y: 15,
-        width: 45,
-        height: 70,
-        minFontSize: 0,
-        maxFontSize: 0,
-        fontWeight: "normal",
-        alignment: "center",
-        priority: 10,
-      },
-      {
-        id: "headline",
-        x: 55,
-        y: 15,
-        width: 40,
-        height: 30,
-        minFontSize: 48,
-        maxFontSize: 72,
-        fontWeight: "bold",
-        alignment: "left",
-        priority: 9,
-      },
-      {
-        id: "proof",
-        x: 55,
-        y: 48,
-        width: 40,
-        height: 15,
-        minFontSize: 24,
-        maxFontSize: 32,
-        fontWeight: "normal",
-        alignment: "left",
-        priority: 6,
-      },
-      {
-        id: "cta",
-        x: 55,
-        y: 70,
-        width: 35,
-        height: 12,
-        minFontSize: 28,
-        maxFontSize: 40,
-        fontWeight: "bold",
-        alignment: "left",
-        priority: 8,
-      },
-      {
-        id: "badge",
-        x: 55,
-        y: 85,
-        width: 25,
-        height: 8,
-        minFontSize: 18,
-        maxFontSize: 24,
-        fontWeight: "normal",
-        alignment: "left",
-        priority: 4,
-      },
-    ],
-    applicableTo: ["luxury_staging", "sensory_explosion", "graphic_statement"],
-    safeZonePosition: "right",
-    productAnchor: "left",
-  },
-
-  // 2. Hero Headline Left — inverse of above
-  {
-    id: "hero_headline_left",
-    name: "Hero Headline Left",
+    id: "left_copy_right_product",
+    name: "Left Copy, Right Product",
     zones: [
       {
         id: "product",
         x: 50,
-        y: 15,
+        y: 10,
         width: 45,
-        height: 70,
+        height: 80,
         minFontSize: 0,
         maxFontSize: 0,
         fontWeight: "normal",
@@ -116,11 +33,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "headline",
         x: 5,
-        y: 15,
-        width: 40,
-        height: 30,
-        minFontSize: 48,
-        maxFontSize: 72,
+        y: 12,
+        width: 42,
+        height: 28,
+        minFontSize: 44,
+        maxFontSize: 68,
         fontWeight: "bold",
         alignment: "left",
         priority: 9,
@@ -128,11 +45,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "proof",
         x: 5,
-        y: 48,
-        width: 40,
+        y: 44,
+        width: 42,
         height: 15,
-        minFontSize: 24,
-        maxFontSize: 32,
+        minFontSize: 22,
+        maxFontSize: 30,
         fontWeight: "normal",
         alignment: "left",
         priority: 6,
@@ -140,11 +57,11 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "cta",
         x: 5,
-        y: 70,
-        width: 35,
+        y: 66,
+        width: 38,
         height: 12,
-        minFontSize: 28,
-        maxFontSize: 40,
+        minFontSize: 26,
+        maxFontSize: 38,
         fontWeight: "bold",
         alignment: "left",
         priority: 8,
@@ -152,129 +69,26 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "badge",
         x: 5,
-        y: 85,
-        width: 25,
+        y: 82,
+        width: 30,
         height: 8,
-        minFontSize: 18,
-        maxFontSize: 24,
+        minFontSize: 16,
+        maxFontSize: 22,
         fontWeight: "normal",
         alignment: "left",
         priority: 4,
       },
     ],
-    applicableTo: ["luxury_staging", "epic_confrontation", "surreal_scale"],
     safeZonePosition: "left",
     productAnchor: "right",
   },
 
-  // 3. Minimal Bottom Bar — thin bar at bottom (headline + CTA)
+  // ─── 2. center_hero_top_claim ───────────────────────────
+  // Product/scene hero center, headline at top, CTA at bottom.
+  // Universal layout — works for most ad types.
   {
-    id: "minimal_bottom_bar",
-    name: "Minimal Bottom Bar",
-    zones: [
-      {
-        id: "headline",
-        x: 5,
-        y: 82,
-        width: 60,
-        height: 10,
-        minFontSize: 36,
-        maxFontSize: 52,
-        fontWeight: "bold",
-        alignment: "left",
-        priority: 9,
-      },
-      {
-        id: "cta",
-        x: 70,
-        y: 82,
-        width: 25,
-        height: 10,
-        minFontSize: 24,
-        maxFontSize: 36,
-        fontWeight: "bold",
-        alignment: "center",
-        priority: 8,
-      },
-      {
-        id: "forbidden",
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 78,
-        minFontSize: 0,
-        maxFontSize: 0,
-        fontWeight: "normal",
-        alignment: "center",
-        priority: 10,
-      },
-    ],
-    applicableTo: ["immersive_world", "character_adventure", "emotional_snapshot"],
-    safeZonePosition: "bottom",
-  },
-
-  // 4. Split Comparison — left/right (transformation)
-  {
-    id: "split_comparison",
-    name: "Split Comparison",
-    zones: [
-      {
-        id: "headline",
-        x: 5,
-        y: 5,
-        width: 90,
-        height: 12,
-        minFontSize: 40,
-        maxFontSize: 60,
-        fontWeight: "bold",
-        alignment: "center",
-        priority: 9,
-      },
-      {
-        id: "subtitle",
-        x: 5,
-        y: 20,
-        width: 40,
-        height: 8,
-        minFontSize: 20,
-        maxFontSize: 28,
-        fontWeight: "normal",
-        alignment: "center",
-        priority: 5,
-      },
-      {
-        id: "proof",
-        x: 55,
-        y: 20,
-        width: 40,
-        height: 8,
-        minFontSize: 20,
-        maxFontSize: 28,
-        fontWeight: "normal",
-        alignment: "center",
-        priority: 6,
-      },
-      {
-        id: "cta",
-        x: 30,
-        y: 88,
-        width: 40,
-        height: 8,
-        minFontSize: 28,
-        maxFontSize: 36,
-        fontWeight: "bold",
-        alignment: "center",
-        priority: 8,
-      },
-    ],
-    applicableTo: ["transformation_story", "epic_confrontation", "surreal_scale"],
-    safeZonePosition: "top",
-  },
-
-  // 5. Top Headline Bottom CTA — universal
-  {
-    id: "top_headline_bottom_cta",
-    name: "Top Headline Bottom CTA",
+    id: "center_hero_top_claim",
+    name: "Center Hero, Top Claim",
     zones: [
       {
         id: "headline",
@@ -325,44 +139,115 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         priority: 4,
       },
     ],
-    applicableTo: ALL_ARCHETYPES,
     safeZonePosition: "top",
   },
 
-  // 6. Full Overlay — gradient + centered text
+  // ─── 3. split_screen ────────────────────────────────────
+  // Left/right split — ideal for before/after, comparison.
   {
-    id: "full_overlay",
-    name: "Full Overlay",
+    id: "split_screen",
+    name: "Split Screen",
     zones: [
       {
         id: "headline",
-        x: 10,
-        y: 30,
-        width: 80,
-        height: 20,
-        minFontSize: 52,
-        maxFontSize: 80,
+        x: 5,
+        y: 5,
+        width: 90,
+        height: 12,
+        minFontSize: 40,
+        maxFontSize: 60,
         fontWeight: "bold",
         alignment: "center",
         priority: 9,
       },
       {
         id: "subtitle",
-        x: 15,
-        y: 52,
-        width: 70,
-        height: 10,
-        minFontSize: 24,
+        x: 5,
+        y: 20,
+        width: 40,
+        height: 8,
+        minFontSize: 20,
+        maxFontSize: 28,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 5,
+      },
+      {
+        id: "proof",
+        x: 55,
+        y: 20,
+        width: 40,
+        height: 8,
+        minFontSize: 20,
+        maxFontSize: 28,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 6,
+      },
+      {
+        id: "cta",
+        x: 30,
+        y: 88,
+        width: 40,
+        height: 8,
+        minFontSize: 28,
         maxFontSize: 36,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 8,
+      },
+    ],
+    safeZonePosition: "top",
+  },
+
+  // ─── 4. card_stack ──────────────────────────────────────
+  // Stacked card modules — centered, layered look.
+  // Good for: offer_led, objection_crusher, ingredient_spotlight.
+  {
+    id: "card_stack",
+    name: "Card Stack",
+    zones: [
+      {
+        id: "headline",
+        x: 10,
+        y: 22,
+        width: 80,
+        height: 20,
+        minFontSize: 48,
+        maxFontSize: 76,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 9,
+      },
+      {
+        id: "proof",
+        x: 15,
+        y: 45,
+        width: 70,
+        height: 12,
+        minFontSize: 22,
+        maxFontSize: 30,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 6,
+      },
+      {
+        id: "subtitle",
+        x: 15,
+        y: 58,
+        width: 70,
+        height: 8,
+        minFontSize: 20,
+        maxFontSize: 26,
         fontWeight: "normal",
         alignment: "center",
         priority: 5,
       },
       {
         id: "cta",
-        x: 30,
+        x: 25,
         y: 72,
-        width: 40,
+        width: 50,
         height: 10,
         minFontSize: 28,
         maxFontSize: 40,
@@ -373,9 +258,9 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "badge",
         x: 35,
-        y: 85,
+        y: 86,
         width: 30,
-        height: 7,
+        height: 8,
         minFontSize: 16,
         maxFontSize: 22,
         fontWeight: "normal",
@@ -383,14 +268,75 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         priority: 4,
       },
     ],
-    applicableTo: ["pop_culture_twist", "absurd_humor", "graphic_statement"],
     safeZonePosition: "bottom",
+    productAnchor: "center",
   },
 
-  // 7. Badge Corner — focus product + badge in corner
+  // ─── 5. quote_frame ─────────────────────────────────────
+  // Testimonial/quote-focused layout — proof at top, headline at bottom.
+  // Good for: testimonial, ugc_hybrid, social_proof.
   {
-    id: "badge_corner",
-    name: "Badge Corner",
+    id: "quote_frame",
+    name: "Quote Frame",
+    zones: [
+      {
+        id: "proof",
+        x: 5,
+        y: 5,
+        width: 90,
+        height: 14,
+        minFontSize: 28,
+        maxFontSize: 42,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 9,
+      },
+      {
+        id: "headline",
+        x: 5,
+        y: 78,
+        width: 60,
+        height: 12,
+        minFontSize: 36,
+        maxFontSize: 52,
+        fontWeight: "bold",
+        alignment: "left",
+        priority: 8,
+      },
+      {
+        id: "cta",
+        x: 68,
+        y: 80,
+        width: 27,
+        height: 10,
+        minFontSize: 24,
+        maxFontSize: 34,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 7,
+      },
+      {
+        id: "badge",
+        x: 5,
+        y: 92,
+        width: 25,
+        height: 6,
+        minFontSize: 14,
+        maxFontSize: 20,
+        fontWeight: "normal",
+        alignment: "left",
+        priority: 4,
+      },
+    ],
+    safeZonePosition: "top",
+  },
+
+  // ─── 6. badge_cluster ───────────────────────────────────
+  // Badge/proof elements prominent — corner badges + bottom bar.
+  // Good for: proof_demo, ingredient_spotlight, certification.
+  {
+    id: "badge_cluster",
+    name: "Badge Cluster",
     zones: [
       {
         id: "badge",
@@ -403,6 +349,18 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         fontWeight: "bold",
         alignment: "center",
         priority: 7,
+      },
+      {
+        id: "proof",
+        x: 5,
+        y: 18,
+        width: 35,
+        height: 8,
+        minFontSize: 18,
+        maxFontSize: 24,
+        fontWeight: "normal",
+        alignment: "left",
+        priority: 6,
       },
       {
         id: "headline",
@@ -429,66 +387,21 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         priority: 8,
       },
     ],
-    applicableTo: ["luxury_staging", "sensory_explosion", "social_proof_scene"],
     safeZonePosition: "bottom",
     productAnchor: "center",
   },
 
-  // 8. Social Proof Banner — proof/testimonial at top
+  // ─── 7. vertical_story_stack ────────────────────────────
+  // Vertical flow — caption strip at bottom, image fills most of frame.
+  // Good for: editorial, ugc_hybrid, character-driven ads.
   {
-    id: "social_proof_banner",
-    name: "Social Proof Banner",
-    zones: [
-      {
-        id: "proof",
-        x: 5,
-        y: 5,
-        width: 90,
-        height: 12,
-        minFontSize: 28,
-        maxFontSize: 40,
-        fontWeight: "bold",
-        alignment: "center",
-        priority: 9,
-      },
-      {
-        id: "headline",
-        x: 5,
-        y: 80,
-        width: 60,
-        height: 12,
-        minFontSize: 36,
-        maxFontSize: 52,
-        fontWeight: "bold",
-        alignment: "left",
-        priority: 8,
-      },
-      {
-        id: "cta",
-        x: 68,
-        y: 82,
-        width: 27,
-        height: 10,
-        minFontSize: 24,
-        maxFontSize: 34,
-        fontWeight: "bold",
-        alignment: "center",
-        priority: 7,
-      },
-    ],
-    applicableTo: ["social_proof_scene", "emotional_snapshot", "absurd_humor"],
-    safeZonePosition: "top",
-  },
-
-  // 9. Lifestyle Caption — caption strip at bottom
-  {
-    id: "lifestyle_caption",
-    name: "Lifestyle Caption",
+    id: "vertical_story_stack",
+    name: "Vertical Story Stack",
     zones: [
       {
         id: "headline",
         x: 5,
-        y: 75,
+        y: 73,
         width: 90,
         height: 10,
         minFontSize: 36,
@@ -500,7 +413,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "subtitle",
         x: 10,
-        y: 86,
+        y: 84,
         width: 50,
         height: 7,
         minFontSize: 20,
@@ -512,7 +425,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "cta",
         x: 65,
-        y: 86,
+        y: 84,
         width: 30,
         height: 7,
         minFontSize: 24,
@@ -521,22 +434,35 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         alignment: "center",
         priority: 8,
       },
+      {
+        id: "forbidden",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 70,
+        minFontSize: 0,
+        maxFontSize: 0,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 10,
+      },
     ],
-    applicableTo: ["character_adventure", "emotional_snapshot", "pop_culture_twist", "immersive_world"],
     safeZonePosition: "bottom",
   },
 
-  // 10. Impact Center — bold central text (for graphic/statement)
+  // ─── 8. diagonal_split ──────────────────────────────────
+  // Dynamic diagonal composition — impact center with bold text.
+  // Good for: before_after, comparison, visual_metaphor.
   {
-    id: "impact_center",
-    name: "Impact Center",
+    id: "diagonal_split",
+    name: "Diagonal Split",
     zones: [
       {
         id: "forbidden",
         x: 0,
         y: 0,
         width: 100,
-        height: 20,
+        height: 18,
         minFontSize: 0,
         maxFontSize: 0,
         fontWeight: "normal",
@@ -546,9 +472,9 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "headline",
         x: 10,
-        y: 22,
+        y: 20,
         width: 80,
-        height: 25,
+        height: 22,
         minFontSize: 52,
         maxFontSize: 80,
         fontWeight: "bold",
@@ -558,7 +484,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "proof",
         x: 15,
-        y: 50,
+        y: 46,
         width: 70,
         height: 12,
         minFontSize: 22,
@@ -570,7 +496,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "cta",
         x: 25,
-        y: 70,
+        y: 66,
         width: 50,
         height: 10,
         minFontSize: 26,
@@ -582,7 +508,7 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       {
         id: "badge",
         x: 35,
-        y: 85,
+        y: 82,
         width: 30,
         height: 8,
         minFontSize: 16,
@@ -592,57 +518,197 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
         priority: 4,
       },
     ],
-    applicableTo: ["graphic_statement", "surreal_scale", "transformation_story", "epic_confrontation"],
     safeZonePosition: "bottom",
     productAnchor: "center",
   },
+
+  // ─── 9. hero_with_bottom_offer ──────────────────────────
+  // Thin bar at bottom — headline + CTA. Image dominates.
+  // Good for: offer_led, benefit_closeup, editorial.
+  {
+    id: "hero_with_bottom_offer",
+    name: "Hero with Bottom Offer",
+    zones: [
+      {
+        id: "headline",
+        x: 5,
+        y: 80,
+        width: 60,
+        height: 10,
+        minFontSize: 36,
+        maxFontSize: 52,
+        fontWeight: "bold",
+        alignment: "left",
+        priority: 9,
+      },
+      {
+        id: "cta",
+        x: 70,
+        y: 80,
+        width: 25,
+        height: 10,
+        minFontSize: 24,
+        maxFontSize: 36,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 8,
+      },
+      {
+        id: "badge",
+        x: 5,
+        y: 5,
+        width: 25,
+        height: 8,
+        minFontSize: 18,
+        maxFontSize: 24,
+        fontWeight: "bold",
+        alignment: "center",
+        priority: 5,
+      },
+      {
+        id: "forbidden",
+        x: 0,
+        y: 15,
+        width: 100,
+        height: 62,
+        minFontSize: 0,
+        maxFontSize: 0,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 10,
+      },
+    ],
+    safeZonePosition: "bottom",
+  },
+
+  // ─── 10. macro_with_side_copy ───────────────────────────
+  // Macro/close-up product right, copy stack left.
+  // Good for: ingredient_spotlight, benefit_closeup, proof_demo.
+  {
+    id: "macro_with_side_copy",
+    name: "Macro with Side Copy",
+    zones: [
+      {
+        id: "product",
+        x: 50,
+        y: 15,
+        width: 45,
+        height: 70,
+        minFontSize: 0,
+        maxFontSize: 0,
+        fontWeight: "normal",
+        alignment: "center",
+        priority: 10,
+      },
+      {
+        id: "headline",
+        x: 5,
+        y: 15,
+        width: 42,
+        height: 25,
+        minFontSize: 44,
+        maxFontSize: 68,
+        fontWeight: "bold",
+        alignment: "left",
+        priority: 9,
+      },
+      {
+        id: "proof",
+        x: 5,
+        y: 44,
+        width: 42,
+        height: 15,
+        minFontSize: 22,
+        maxFontSize: 30,
+        fontWeight: "normal",
+        alignment: "left",
+        priority: 6,
+      },
+      {
+        id: "cta",
+        x: 5,
+        y: 65,
+        width: 38,
+        height: 12,
+        minFontSize: 26,
+        maxFontSize: 38,
+        fontWeight: "bold",
+        alignment: "left",
+        priority: 8,
+      },
+      {
+        id: "badge",
+        x: 5,
+        y: 82,
+        width: 30,
+        height: 8,
+        minFontSize: 16,
+        maxFontSize: 22,
+        fontWeight: "normal",
+        alignment: "left",
+        priority: 4,
+      },
+    ],
+    safeZonePosition: "left",
+    productAnchor: "right",
+  },
 ];
 
+// ─── SELECTION ─────────────────────────────────────────────
+
 /**
- * Select the best layout template based on overlay intent.
- * Since archetypes are now free strings, selection is driven
- * entirely by the overlay intent and safe zone position.
+ * Select layout template by LayoutFamily (v3 — direct ID match).
+ * Falls back to center_hero_top_claim if no match.
+ */
+export function selectLayoutByFamily(layoutFamily: string): LayoutTemplate {
+  return LAYOUT_TEMPLATES.find((t) => t.id === layoutFamily)
+    || LAYOUT_TEMPLATES.find((t) => t.id === "center_hero_top_claim")!;
+}
+
+/**
+ * Select layout by overlay intent (v2 compat).
+ * @deprecated Use selectLayoutByFamily instead.
  */
 export function selectLayout(
   _archetype: string,
   overlayIntent: string,
   _aspectRatio: string
 ): LayoutTemplate {
-  // Intent-based selection (no archetype matching needed)
+  // Intent-based selection (v2 fallback)
   if (overlayIntent === "minimal") {
-    return LAYOUT_TEMPLATES.find((t) => t.id === "minimal_bottom_bar")
-      || LAYOUT_TEMPLATES.find((t) => t.id === "lifestyle_caption")!;
+    return LAYOUT_TEMPLATES.find((t) => t.id === "hero_with_bottom_offer")
+      || LAYOUT_TEMPLATES.find((t) => t.id === "vertical_story_stack")!;
   }
 
   if (overlayIntent === "full_ad") {
-    return LAYOUT_TEMPLATES.find((t) => t.id === "full_overlay")
-      || LAYOUT_TEMPLATES.find((t) => t.id === "impact_center")!;
+    return LAYOUT_TEMPLATES.find((t) => t.id === "card_stack")
+      || LAYOUT_TEMPLATES.find((t) => t.id === "diagonal_split")!;
   }
 
   if (overlayIntent === "badge_proof") {
-    return LAYOUT_TEMPLATES.find((t) => t.id === "badge_corner")
-      || LAYOUT_TEMPLATES.find((t) => t.id === "social_proof_banner")!;
+    return LAYOUT_TEMPLATES.find((t) => t.id === "badge_cluster")
+      || LAYOUT_TEMPLATES.find((t) => t.id === "quote_frame")!;
   }
 
-  // Default: top_headline_bottom_cta (universal)
-  return LAYOUT_TEMPLATES.find((t) => t.id === "top_headline_bottom_cta")!;
+  // Default
+  return LAYOUT_TEMPLATES.find((t) => t.id === "center_hero_top_claim")!;
 }
 
 /**
  * Get a simpler fallback template (fewer zones, less text).
  */
 export function getFallbackTemplate(currentId: string): LayoutTemplate | null {
-  const simplicity: Record<string, string> = {
-    full_overlay: "top_headline_bottom_cta",
-    top_headline_bottom_cta: "minimal_bottom_bar",
-    hero_headline_right: "badge_corner",
-    hero_headline_left: "badge_corner",
-    split_comparison: "top_headline_bottom_cta",
-    impact_center: "top_headline_bottom_cta",
-    social_proof_banner: "minimal_bottom_bar",
-    badge_corner: "minimal_bottom_bar",
-    lifestyle_caption: "minimal_bottom_bar",
-    minimal_bottom_bar: null as unknown as string,
+  const simplicity: Record<string, string | null> = {
+    card_stack: "center_hero_top_claim",
+    diagonal_split: "center_hero_top_claim",
+    center_hero_top_claim: "hero_with_bottom_offer",
+    left_copy_right_product: "badge_cluster",
+    macro_with_side_copy: "badge_cluster",
+    split_screen: "center_hero_top_claim",
+    quote_frame: "hero_with_bottom_offer",
+    badge_cluster: "hero_with_bottom_offer",
+    vertical_story_stack: "hero_with_bottom_offer",
+    hero_with_bottom_offer: null,
   };
 
   const fallbackId = simplicity[currentId];

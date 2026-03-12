@@ -49,16 +49,22 @@ export default async function BrandLibraryPage({
         <LibraryClient
           brandId={brandId}
           brandName={brand.name}
-          images={images.map((img) => ({
-            id: img.id,
-            filePath: img.filePath,
-            format: img.format,
-            status: img.status,
-            tags: img.tags,
-            createdAt: img.createdAt,
-            scoreData: img.scoreData,
-            compiledPrompt: img.compiledPrompt || null,
-          }))}
+          images={images.map((img) => {
+            const cd = img.creativeData as Record<string, unknown> | null;
+            const promptUsed = (cd?.prompt_used as string) || null;
+            const brief = cd?.brief as Record<string, unknown> | null;
+            const visualIdea = (brief?.single_visual_idea as string) || null;
+            return {
+              id: img.id,
+              filePath: img.filePath,
+              format: img.format,
+              status: img.status,
+              tags: img.tags,
+              createdAt: img.createdAt,
+              scoreData: img.scoreData,
+              compiledPrompt: promptUsed || visualIdea || img.compiledPrompt || null,
+            };
+          })}
         />
       )}
     </div>

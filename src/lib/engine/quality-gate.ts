@@ -6,6 +6,9 @@ import type {
   ComposedAd,
   CollisionReport,
 } from "./types";
+import { callClaudeWithRetry } from "../ai/claude-retry";
+import { getKnowledgeForStage } from "./knowledge";
+import type { AwarenessLevel } from "./knowledge";
 
 // ============================================================
 // COMPONENT H: QUALITY GATES
@@ -37,10 +40,18 @@ export async function renderGate(result: RenderResult): Promise<GateVerdict> {
     ? ("image/png" as const)
     : ("image/jpeg" as const);
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 256,
-    system: `Tu es un controleur qualite pour des images publicitaires generees par IA. Evalue rapidement si l'image est utilisable pour une pub Meta. Reponds UNIQUEMENT en JSON valide, sans texte avant ou apres.`,
+    system: `Tu es un controleur qualite pour des images publicitaires generees par IA. Evalue rapidement si l'image est utilisable pour une pub Meta.
+
+${(() => {
+  const awareness = (result.brief.awareness_level || "problem_aware") as AwarenessLevel;
+  const k = getKnowledgeForStage("quality_gate", awareness);
+  return k.visual_rules;
+})()}
+
+Reponds UNIQUEMENT en JSON valide, sans texte avant ou apres.`,
     messages: [
       {
         role: "user",
@@ -82,7 +93,7 @@ Determine l'action :
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -146,9 +157,13 @@ export async function renderGateBatch(
   results: RenderResult[]
 ): Promise<GateVerdict[]> {
   const verdicts: GateVerdict[] = [];
-  for (const result of results) {
-    const verdict = await renderGate(result);
+  for (let i = 0; i < results.length; i++) {
+    const verdict = await renderGate(results[i]);
     verdicts.push(verdict);
+    // Small delay between sequential gate checks to avoid rate limits
+    if (i < results.length - 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
   return verdicts;
 }

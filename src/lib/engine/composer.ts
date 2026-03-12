@@ -13,7 +13,9 @@ import type {
   ComposedAd,
   ComposerInput,
 } from "./types";
-import { selectLayout, getFallbackTemplate } from "./layout-templates";
+import { selectLayout, selectLayoutByFamily, getFallbackTemplate } from "./layout-templates";
+import { TEXT_ON_IMAGE_RULES } from "./knowledge";
+import type { ConceptSpec } from "./types";
 
 // ============================================================
 // COMPONENT G: COMPOSER
@@ -59,13 +61,75 @@ export function deriveCopyAssets(
   brief: CreativeBrief,
   context: FilteredContext
 ): CopyAssets {
+  // Enforce knowledge rule: max 7 words for headline on image
+  let headline = brief.headline_suggestion || context.promise;
+  const maxWords = TEXT_ON_IMAGE_RULES.maxHeadlineWords;
+  const words = headline.split(/\s+/);
+  if (words.length > maxWords) {
+    headline = words.slice(0, maxWords).join(" ");
+  }
+
   return {
-    headline: brief.headline_suggestion || context.promise,
+    headline,
     subtitle: brief.why_this_should_stop_scroll,
     proof: brief.proof_to_show,
     badge: undefined, // Could add "N°1 en France" etc.
     cta: brief.cta_suggestion || "Découvrir",
     brandName: context.brand_name,
+  };
+}
+
+/**
+ * Derive copy assets from a ConceptSpec (v3).
+ * Uses structured taxonomy data for richer copy.
+ */
+export function deriveCopyAssetsV3(
+  concept: ConceptSpec,
+  context: FilteredContext
+): CopyAssets {
+  // Enforce max 7 words for headline on image
+  const maxWords = TEXT_ON_IMAGE_RULES.maxHeadlineWords;
+  let headline = concept.headline;
+  const words = headline.split(/\s+/);
+  if (words.length > maxWords) {
+    headline = words.slice(0, maxWords).join(" ");
+  }
+
+  // Build proof text based on proof mechanism
+  let proof: string | undefined = concept.proof_text;
+  if (!proof) {
+    switch (concept.proof_mechanism) {
+      case "social_proof":
+        proof = "Recommandé par +10 000 clients";
+        break;
+      case "data":
+        proof = "Résultats prouvés cliniquement";
+        break;
+      case "certification":
+        proof = "Certifié qualité";
+        break;
+      default:
+        proof = undefined;
+    }
+  }
+
+  // Build rating string for social proof
+  let rating: string | undefined;
+  if (concept.proof_mechanism === "social_proof" || concept.proof_mechanism === "data") {
+    rating = proof; // Use proof text as rating display
+  }
+
+  return {
+    headline,
+    subtitle: concept.belief_shift,
+    proof,
+    badge: context.brand_name,
+    cta: concept.cta || "Découvrir",
+    brandName: context.brand_name,
+    // v3 enrichments
+    offer: concept.offer_module || undefined,
+    rating,
+    ingredient: concept.proof_mechanism === "ingredient" ? concept.proof_text : undefined,
   };
 }
 
@@ -417,6 +481,73 @@ function renderCta(
   return svg;
 }
 
+// ─── NEW SVG AD MODULES (v3) ────────────────────────────────
+
+function renderOfferRibbon(
+  zone: PlacedZone,
+  text: string,
+  fontSize: number,
+  accentColor: string,
+  fontFamily: string
+): string {
+  if (!text) return "";
+  const ribbonH = fontSize * 2.2;
+  const ribbonW = zone.absW;
+  const ribbonX = zone.absX;
+  const ribbonY = zone.absY;
+
+  let svg = "";
+  svg += `<rect x="${ribbonX}" y="${ribbonY}" width="${ribbonW}" height="${ribbonH}" fill="${escapeXml(accentColor)}" opacity="0.92"/>`;
+  svg += `<text x="${ribbonX + ribbonW / 2}" y="${ribbonY + ribbonH / 2 + fontSize * 0.35}" fill="#FFFFFF" font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="800" text-anchor="middle">${escapeXml(text)}</text>`;
+  return svg;
+}
+
+function renderRatingBlock(
+  zone: PlacedZone,
+  text: string,
+  fontSize: number,
+  accentColor: string,
+  fontFamily: string
+): string {
+  if (!text) return "";
+  const padding = fontSize * 0.4;
+  const blockW = Math.min(zone.absW, text.length * fontSize * 0.5 + padding * 2 + fontSize * 3);
+  const blockH = fontSize * 1.8 + padding * 2;
+
+  const blockX = zone.alignment === "center"
+    ? zone.absX + (zone.absW - blockW) / 2
+    : zone.absX;
+  const blockY = zone.absY;
+
+  let svg = "";
+  // Background pill
+  svg += `<rect x="${blockX}" y="${blockY}" width="${blockW}" height="${blockH}" rx="${blockH / 3}" fill="#FFFFFF" opacity="0.92"/>`;
+  // Star icon (simplified)
+  const starX = blockX + padding + fontSize * 0.6;
+  const starY = blockY + blockH / 2;
+  svg += `<text x="${starX}" y="${starY + fontSize * 0.35}" fill="${escapeXml(accentColor)}" font-size="${fontSize * 1.2}" text-anchor="middle">★</text>`;
+  // Rating text
+  svg += `<text x="${starX + fontSize * 1.2}" y="${starY + fontSize * 0.35}" fill="#1A1A1A" font-family="${escapeXml(fontFamily)}" font-size="${fontSize * 0.85}" font-weight="700" text-anchor="start">${escapeXml(text)}</text>`;
+  return svg;
+}
+
+function renderBrandBar(
+  canvasW: number,
+  canvasH: number,
+  brandName: string,
+  primaryColor: string,
+  fontFamily: string
+): string {
+  const barH = 36;
+  const barY = canvasH - barH;
+  const fontSize = 16;
+
+  let svg = "";
+  svg += `<rect x="0" y="${barY}" width="${canvasW}" height="${barH}" fill="${escapeXml(primaryColor)}" opacity="0.85"/>`;
+  svg += `<text x="${canvasW / 2}" y="${barY + barH / 2 + fontSize * 0.35}" fill="#FFFFFF" font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="600" text-anchor="middle">${escapeXml(brandName)}</text>`;
+  return svg;
+}
+
 // ─── UTILITY ─────────────────────────────────────────────────
 
 function getTextForZone(
@@ -429,11 +560,14 @@ function getTextForZone(
     case "subtitle":
       return copyAssets.subtitle || null;
     case "proof":
-      return copyAssets.proof || null;
+      // v3: prefer rating/ingredient for proof zone when available
+      return copyAssets.rating || copyAssets.ingredient || copyAssets.proof || null;
     case "badge":
       return copyAssets.badge || copyAssets.brandName;
     case "cta":
       return copyAssets.cta || null;
+    case "offer":
+      return copyAssets.offer || null;
     default:
       return null;
   }
@@ -499,11 +633,11 @@ export async function composeAd(input: ComposerInput): Promise<ComposedAd> {
   const canvasH = meta.height || 1080;
 
   // Step 1: Select layout template
-  let template = selectLayout(
-    brief.creative_archetype,
-    overlayIntent,
-    aspectRatio
-  );
+  // v3 path: use layout_family taxonomy for direct selection
+  // v2 fallback: use overlay intent
+  let template = input.layoutFamily
+    ? selectLayoutByFamily(input.layoutFamily)
+    : selectLayout(brief.creative_archetype, overlayIntent, aspectRatio);
 
   // Step 2: Filter zones based on text density
   let activeZones = filterZonesByDensity(template.zones, textDensity, copyAssets);

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { FilteredContext, BatchLockConfig } from "./types";
+import { callClaudeWithRetry } from "../ai/claude-retry";
 
 // ============================================================
 // COMPONENT J: BATCH LOCKER
@@ -21,7 +22,7 @@ export async function lockBatch(
 ): Promise<BatchLockConfig> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 512,
     system: `Tu es un strategiste de campagne publicitaire. Ta mission : definir le socle strategique commun pour un batch de variantes publicitaires Meta.
@@ -51,7 +52,7 @@ Niveau de conscience: ${context.awareness_level}
 }`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {

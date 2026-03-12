@@ -2,9 +2,17 @@ import type { CreativeArchetypeId } from "./types";
 
 // ============================================================
 // CREATIVE ARCHETYPES — 12 narrative ad strategies
-// Each archetype defines a CREATIVE CONCEPT for scroll-stopping
-// Meta ads. These are NOT photography styles — they are
-// storytelling strategies that place products in imaginative worlds.
+//
+// @deprecated — This module is DEPRECATED as of Pipeline v3.
+// Use taxonomy.ts (FormatFamily, LayoutFamily, etc.) instead.
+//
+// Archetypes are still used by the art-director.ts fallback
+// when it receives a recognized archetype ID from legacy briefs.
+// Once the ConceptPlanner (Phase B) is deployed, this file
+// can be safely removed.
+//
+// Migration: creative_archetype (free string) →
+//   format_family + layout_family + visual_style (closed taxonomy)
 // ============================================================
 
 export interface CreativeArchetype {

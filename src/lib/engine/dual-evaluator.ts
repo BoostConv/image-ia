@@ -9,6 +9,9 @@ import type {
   DualBatchEvaluation,
   PairwiseRanking,
 } from "./types";
+import { callClaudeWithRetry } from "../ai/claude-retry";
+import { getKnowledgeForStage } from "./knowledge";
+import type { AwarenessLevel } from "./knowledge";
 
 // ============================================================
 // COMPONENT K: DUAL EVALUATOR
@@ -36,12 +39,18 @@ export async function evaluateBaseImage(
     ? ("image/png" as const)
     : ("image/jpeg" as const);
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1536,
     system: `Tu es un evaluateur expert en qualite d'image publicitaire. Evalue l'image BRUTE (avant composition texte/layout). Focus sur la qualite technique et le potentiel publicitaire.
 
 Chaque score de 1 a 10. Sois SEVERE. Un 7 = pro correct. Un 9 = exceptionnel.
+
+${(() => {
+  const awareness = (result.brief.awareness_level || "problem_aware") as AwarenessLevel;
+  const k = getKnowledgeForStage("evaluator", awareness);
+  return k.visual_rules;
+})()}
 
 Reponds UNIQUEMENT en JSON valide.`,
     messages: [
@@ -90,7 +99,7 @@ Archetype: ${result.brief.creative_archetype}
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -146,12 +155,15 @@ export async function evaluateComposedAd(
 
   const imageBase64 = composed.buffer.toString("base64");
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     system: `Tu es un expert en publicite Meta (Facebook/Instagram). Evalue la PUB COMPOSEE FINALE — l'image avec ses textes, CTA, preuves overlays. Focus sur la lisibilite mobile, la hierarchie visuelle et l'efficacite de la composition.
 
 Chaque score de 1 a 10. Sois SEVERE. Un 7 = pro correct.
+
+CRITERES COPY: Max 7 mots pour headline sur image. Mots puissants (Gratuit, Nouveau, Garanti)? Ton conversationnel? Specifique?
+CRITERES VISUELS: Pattern Z respecte? Point focal unique? Contraste CTA suffisant? Lisible en 0.3s sur mobile?
 
 Reponds UNIQUEMENT en JSON valide.`,
     messages: [
@@ -193,7 +205,7 @@ CTA: "${composed.copyAssets.cta || "aucun"}"
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -307,13 +319,13 @@ Promesse : ${context.promise}
 }`,
   });
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     system:
       "Tu es un media buyer expert Meta ads. Compare des pubs composees finales et designe les meilleures. Reponds UNIQUEMENT en JSON valide.",
     messages: [{ role: "user", content: imageContents }],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -351,6 +363,10 @@ export async function dualEvaluateBatch(
   for (let i = 0; i < results.length; i++) {
     const eval_ = await dualEvaluate(results[i], composedAds[i], context);
     individual.push(eval_);
+    // Small delay between sequential evaluations to avoid rate limits
+    if (i < results.length - 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
   const pairwise = await rankComposedBatch(composedAds, individual, context);

@@ -7,10 +7,6 @@ import {
   RectangleVertical,
   RectangleHorizontal,
   Smartphone,
-  Monitor,
-  Package,
-  Camera,
-  Sparkles,
   CheckCircle2,
 } from "lucide-react";
 
@@ -19,10 +15,6 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   RectangleVertical,
   RectangleHorizontal,
   Smartphone,
-  Monitor,
-  Package,
-  Camera,
-  Sparkles,
 };
 
 // Single select mode (legacy)

@@ -17,8 +17,27 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, websiteUrl, colorPalette, typography, product, persona } =
-      body;
+    const {
+      name,
+      description,
+      websiteUrl,
+      colorPalette,
+      typography,
+      product,
+      persona,
+      // V1 Brief fields
+      mission,
+      vision,
+      positioning,
+      tone,
+      values,
+      targetMarket,
+      identiteFondamentale,
+      positionnementStrategique,
+      tonCommunication,
+      briefMetadata,
+      briefStatus,
+    } = body;
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -33,6 +52,18 @@ export async function POST(request: NextRequest) {
       websiteUrl: websiteUrl || undefined,
       colorPalette: colorPalette || undefined,
       typography: typography || undefined,
+      // V1 Brief fields
+      mission: mission || undefined,
+      vision: vision || undefined,
+      positioning: positioning || undefined,
+      tone: tone || undefined,
+      values: values || undefined,
+      targetMarket: targetMarket || undefined,
+      identiteFondamentale: identiteFondamentale || undefined,
+      positionnementStrategique: positionnementStrategique || undefined,
+      tonCommunication: tonCommunication || undefined,
+      briefMetadata: briefMetadata || undefined,
+      briefStatus: briefStatus || undefined,
     });
 
     // Create product if provided
@@ -71,8 +102,26 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, name, description, websiteUrl, colorPalette, typography,
-            mission, vision, positioning, tone, values, targetMarket } = body;
+    const {
+      id,
+      name,
+      description,
+      websiteUrl,
+      colorPalette,
+      typography,
+      mission,
+      vision,
+      positioning,
+      tone,
+      values,
+      targetMarket,
+      // V1 Brief fields
+      identiteFondamentale,
+      positionnementStrategique,
+      tonCommunication,
+      briefMetadata,
+      briefStatus,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ error: "ID requis" }, { status: 400 });
@@ -92,6 +141,12 @@ export async function PATCH(request: NextRequest) {
     if (tone !== undefined) updates.tone = tone;
     if (values !== undefined) updates.values = values;
     if (targetMarket !== undefined) updates.targetMarket = targetMarket;
+    // V1 Brief fields
+    if (identiteFondamentale !== undefined) updates.identiteFondamentale = identiteFondamentale;
+    if (positionnementStrategique !== undefined) updates.positionnementStrategique = positionnementStrategique;
+    if (tonCommunication !== undefined) updates.tonCommunication = tonCommunication;
+    if (briefMetadata !== undefined) updates.briefMetadata = briefMetadata;
+    if (briefStatus !== undefined) updates.briefStatus = briefStatus;
 
     await db.update(brandsTable).set(updates).where(eq(brandsTable.id, id));
     return NextResponse.json({ success: true });

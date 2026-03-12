@@ -278,7 +278,7 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                   </div>
                 )}
               </div>
-              <div className="p-2">
+              <div className="p-2 space-y-1.5">
                 <div className="flex items-center gap-1 flex-wrap">
                   {img.format && (
                     <Badge variant="outline" className="text-[10px]">
@@ -302,6 +302,12 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                         : "En attente"}
                   </Badge>
                 </div>
+                {/* Prompt preview */}
+                {img.compiledPrompt && (
+                  <p className="text-[10px] leading-tight text-muted-foreground line-clamp-3">
+                    {img.compiledPrompt}
+                  </p>
+                )}
               </div>
             </Card>
           );

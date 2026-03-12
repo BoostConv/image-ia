@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { callClaudeWithRetry } from "./claude-retry";
 
 const getClient = () => {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -185,12 +186,12 @@ UTILISE les vraies donnees produit : noms, chiffres, benefices concrets, pas de 
 VARIE les angles creatifs et les niveaux de conscience.
 Le resultat doit etre au niveau des meilleures pubs Instagram/Facebook du marche.`;
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -265,7 +266,7 @@ export async function analyzeBrandSite(params: {
 }): Promise<BrandSiteAnalysis> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     system: `Tu es un expert en branding et identite visuelle. Analyse les donnees extraites d'un site web de marque et structure les informations.
@@ -320,7 +321,7 @@ IMPORTANT :
 - Pour les polices, utilise celles trouvees. Si aucune n'est trouvee, suggere des polices coherentes avec le positionnement.`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -357,7 +358,7 @@ export async function analyzeInspirationAd(
         ? "image/gif"
         : "image/jpeg";
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     messages: [
@@ -392,7 +393,7 @@ Les tags doivent decrire les caracteristiques visuelles cles (ex: "minimaliste",
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -422,7 +423,7 @@ export async function summarizeBrandDocument(
 ): Promise<DocumentSummary> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     messages: [
@@ -446,7 +447,7 @@ Reponds UNIQUEMENT en JSON valide :
 }`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -491,7 +492,7 @@ export async function structureScrapedProduct(
 ): Promise<ScrapedProductData> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
     messages: [
@@ -526,7 +527,7 @@ Reponds UNIQUEMENT en JSON valide :
 }`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -577,7 +578,7 @@ export async function enrichPersona(
 ): Promise<EnrichedPersonaData> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 3000,
     messages: [
@@ -625,7 +626,7 @@ Reponds UNIQUEMENT en JSON valide :
 }`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -669,7 +670,7 @@ export async function scoreGeneratedImage(
       ? "image/webp"
       : "image/jpeg";
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     messages: [
@@ -712,7 +713,7 @@ Reponds UNIQUEMENT en JSON valide :
         ],
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -742,7 +743,7 @@ export async function improvePrompt(
     .map(([key, val]) => `${key}: ${val}/10`)
     .join(", ");
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     messages: [
@@ -770,7 +771,7 @@ MISSION : Reecris le prompt en anglais pour corriger les faiblesses identifiees.
 Reponds UNIQUEMENT avec le nouveau prompt en anglais, sans explication.`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -799,7 +800,7 @@ export async function extractBriefConstraints(
 ): Promise<BriefConstraints> {
   const client = getClient();
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     messages: [
@@ -824,7 +825,7 @@ Reponds UNIQUEMENT en JSON valide :
 Pour suggestedFormats, utilise uniquement ces valeurs : feed_square, feed_portrait, feed_landscape, story, banner_728x90, banner_300x250`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
@@ -928,7 +929,7 @@ export async function generateAdConcepts(params: GenerateAdConceptParams): Promi
   const productSection = params.product ? buildProductSection(params.product) : "";
   const personaSection = params.persona ? buildPersonaSection(params.persona) : "";
 
-  const response = await client.messages.create({
+  const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 4096,
     messages: [
@@ -1015,7 +1016,7 @@ REGLES CRITIQUES pour backgroundPrompt :
 N'inclure QUE les champs pertinents dans copy (pas de comparisonLeft/Right pour un hero_product, pas de stats si pas de chiffres, etc).`,
       },
     ],
-  });
+  }));
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {

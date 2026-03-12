@@ -2,6 +2,9 @@ import type {
   RawPipelineInput,
   FilteredContext,
   CreativeBrief,
+  ConceptSpec,
+  ScoredConcept,
+  AdDirectorSpec,
   ArtDirection,
   BuiltPrompt,
   RenderResult,
@@ -15,31 +18,38 @@ import type {
 } from "./types";
 import { filterContext } from "./context-filter";
 import { lockBatch } from "./batch-locker";
-import { planCreatives } from "./creative-planner";
-import { directArtBatch } from "./art-director";
-import { buildPromptBatch } from "./prompt-builder";
+import { planConcepts } from "./creative-planner";
+import { critiqueConcepts } from "./creative-critic";
+import { conceptsToBriefs } from "./concept-adapter";
+import { inferBrandPolicy } from "./brand-style-policy";
+import { directAdBatchV3, adDirectorToArtDirection } from "./art-director";
+import { buildPromptBatchV3 } from "./prompt-builder";
 import { selectReferencesBatch } from "./reference-selector";
 import { renderBatch } from "./renderer";
 import { renderGateBatch } from "./quality-gate";
 import { compositionGate } from "./quality-gate";
-import { composeAd, deriveCopyAssets } from "./composer";
+import { composeAd, deriveCopyAssetsV3 } from "./composer";
 import { dualEvaluateBatch } from "./dual-evaluator";
 import { buildGraphicAd, generateBatchConfigs } from "./graphic-engine";
 import fs from "fs";
 import path from "path";
 
 // ============================================================
-// PIPELINE ORCHESTRATOR v2
-// Dual-engine rendering:
-//   "graphic_design" realism_target → PROGRAMMATIC (Sharp, no AI)
-//     Background gradient + real product photo + SVG text overlay
-//   All other realism_targets → GEMINI (AI scene) + SVG text overlay
+// PIPELINE ORCHESTRATOR v3.1
 //
-// Both paths produce text-free images, then the Composer adds
-// pixel-perfect typography via SVG overlay.
+// A: ContextFilter → J: BatchLocker → B: ConceptPlanner (v3) →
+// B2: CreativeCritic → C: AdDirector (v3 — AdDirectorSpec) →
+// D: PromptBuilder (v3 — 3 specialized builders) →
+// E: Renderer (dual-engine) → H1: RenderGate →
+// G: Composer (v3 — taxonomy-driven layout) →
+// H2: CompositionGate → K: DualEvaluator → F: Ranking
 //
-// The creative planner decides per-concept which path to use.
-// A batch can mix both approaches for maximum variety.
+// Key changes from v3.0:
+//   - Art director produces AdDirectorSpec (richer ad structure)
+//   - Prompt builder routes by render_family (photo/design/hybrid)
+//   - Layout selection by LayoutFamily taxonomy (direct match)
+//   - Copy assets derived from ConceptSpec (v3, richer)
+//   - Adapter bridge still used for renderer backward compat
 // ============================================================
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -52,8 +62,12 @@ export interface PipelineConfig {
 export interface PipelineResult {
   context: FilteredContext;
   lock: BatchLockConfig;
-  briefs: CreativeBrief[];
-  artDirections: ArtDirection[];
+  concepts: ConceptSpec[];           // v3: all generated concepts
+  scoredConcepts: ScoredConcept[];   // v3: scored by critic
+  keptConcepts: ConceptSpec[];       // v3: kept after critic filter
+  briefs: CreativeBrief[];           // v2 compat: adapted from kept concepts
+  adDirections: AdDirectorSpec[];    // v3: ad director specs
+  artDirections: ArtDirection[];     // v2 compat: adapted from ad directions
   prompts: BuiltPrompt[];
   renders: RenderResult[];
   renderGateVerdicts: GateVerdict[];
@@ -65,7 +79,6 @@ export interface PipelineResult {
 export async function runPipeline(config: PipelineConfig): Promise<PipelineResult> {
   const { input, onEvent } = config;
   const hasProductImages = !!(input.product?.imagePaths?.length);
-  const strategy = input.renderStrategy || "complete_ad"; // Default to complete_ad for best quality
 
   // ─── LAYER A: Context Filter ───────────────────────────────
   onEvent({ type: "phase", phase: "A", message: "Filtrage du contexte stratégique..." });
@@ -73,62 +86,75 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   const context = await filterContext(input);
   onEvent({ type: "context_filtered", context });
 
+  // ─── Infer brand policy from context ────────────────────────
+  const brandPolicy = inferBrandPolicy(context);
+  console.log(`[Pipeline] Brand policy: "${brandPolicy.brand_name}" (max stretch: ${brandPolicy.max_stretch_per_batch})`);
+
   // ─── LAYER J: Batch Locker ─────────────────────────────────
   onEvent({ type: "phase", phase: "J", message: "Verrouillage stratégique du batch..." });
 
   const lock = await lockBatch(context, input.count);
   onEvent({ type: "batch_locked", lock });
 
-  // ─── LAYER B: Creative Planner ─────────────────────────────
-  onEvent({ type: "phase", phase: "B", message: "Génération des concepts créatifs..." });
+  // ─── LAYER B: Concept Planner (v3) ────────────────────────
+  // Over-generates count×2 concepts with closed taxonomies.
+  onEvent({ type: "phase", phase: "B", message: `Génération de ${input.count * 2} concepts (sur-génération pour filtrage)...` });
 
-  const briefs = await planCreatives(context, input.count, lock, hasProductImages);
-  onEvent({ type: "briefs_generated", briefs });
+  const allConcepts = await planConcepts(context, input.count, brandPolicy, lock, hasProductImages);
+  onEvent({ type: "concepts_generated", concepts: allConcepts });
 
-  // ─── LAYER C: Art Director (ONLY for clean mode) ───────────
-  let artDirections: (ArtDirection | null)[];
+  // ─── LAYER B2: Creative Critic ────────────────────────────
+  // Scores all concepts, keeps top N.
+  onEvent({ type: "phase", phase: "B2", message: `Critique créative — filtrage des ${allConcepts.length} concepts...` });
 
-  if (strategy === "clean") {
-    onEvent({ type: "phase", phase: "C", message: "Direction artistique par concept..." });
+  const scoredConcepts = await critiqueConcepts(allConcepts, context, brandPolicy, input.count);
+  const keptConcepts = scoredConcepts
+    .slice(0, input.count)
+    .map((s) => s.concept);
 
-    const fullDirections = await directArtBatch(briefs, context, hasProductImages);
-    artDirections = fullDirections;
+  const rejectedCount = allConcepts.length - keptConcepts.length;
+  onEvent({ type: "concepts_scored", scored: scoredConcepts, kept: keptConcepts.length, rejected: rejectedCount });
+  console.log(`[Pipeline] Critic: kept ${keptConcepts.length}/${allConcepts.length} concepts`);
 
-    fullDirections.forEach((dir, i) => {
-      onEvent({ type: "art_direction", index: i, direction: dir });
-    });
-  } else {
-    // COMPLETE_AD MODE: Skip art director entirely
-    onEvent({ type: "phase", phase: "C", message: "Mode complete_ad — direction artistique intégrée au concept créatif (skip)" });
-    artDirections = briefs.map(() => null);
-  }
+  // ─── ADAPTER: ConceptSpec → CreativeBrief ──────────────────
+  // Downstream renderer still expects CreativeBrief for metadata storage.
+  const briefs = conceptsToBriefs(keptConcepts);
+  onEvent({ type: "briefs_generated", briefs }); // Backward compat event
+
+  // ─── LAYER C: Ad Director (v3 — AdDirectorSpec) ────────────
+  onEvent({ type: "phase", phase: "C", message: "Direction artistique v3 par concept..." });
+
+  const adDirections = await directAdBatchV3(keptConcepts, context, hasProductImages);
+
+  // Adapt to ArtDirection for downstream renderer compat
+  const artDirections = adDirections.map(adDirectorToArtDirection);
+
+  adDirections.forEach((dir, i) => {
+    onEvent({ type: "ad_direction", index: i, direction: dir });
+  });
 
   // ─── LAYER D+E: Prompt Build + Render (DUAL ENGINE) ─────────
-  // Route each concept to the right engine:
-  //   graphic_design → Sharp programmatic (instant, 100% reliable)
-  //   everything else → Gemini AI scene (creative, varied)
+  onEvent({ type: "phase", phase: "D", message: "Construction des prompts v3 et routage moteur..." });
 
-  onEvent({ type: "phase", phase: "D", message: "Construction des prompts et routage moteur..." });
+  // Derive copy assets from ConceptSpec (v3 — richer)
+  const allCopyAssets = keptConcepts.map((concept) => ({
+    copyAssets: deriveCopyAssetsV3(concept, context),
+    brandName: context.brand_name,
+  }));
 
   // Split concepts by engine type
   const graphicIndices: number[] = [];
   const geminiIndices: number[] = [];
 
-  briefs.forEach((brief, i) => {
-    if (brief.realism_target === "graphic_design" && hasProductImages) {
+  keptConcepts.forEach((concept, i) => {
+    if (concept.render_family === "design_led" && hasProductImages) {
       graphicIndices.push(i);
     } else {
       geminiIndices.push(i);
     }
   });
 
-  console.log(`[Pipeline] Routing: ${graphicIndices.length} graphic_design + ${geminiIndices.length} AI scene`);
-
-  // Derive copy assets for ALL concepts (needed by both engines)
-  const allCopyAssets = briefs.map((brief) => ({
-    copyAssets: deriveCopyAssets(brief, context),
-    brandName: context.brand_name,
-  }));
+  console.log(`[Pipeline] Routing: ${graphicIndices.length} design_led + ${geminiIndices.length} AI (photo/hybrid)`);
 
   // ─── ENGINE A: Graphic Design (programmatic, no AI) ────────
   const graphicRenders: Map<number, RenderResult> = new Map();
@@ -136,8 +162,9 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   if (graphicIndices.length > 0) {
     onEvent({ type: "phase", phase: "E", message: `Moteur graphique (${graphicIndices.length} concepts)...` });
 
-    // Load product image once
-    const productBuffer = loadFirstProductImage(input.product?.imagePaths);
+    // Prefer user-uploaded additional images, then product images from disk
+    const productBuffer = input.additionalReferenceImages?.[0]
+      || loadFirstProductImage(input.product?.imagePaths);
 
     if (productBuffer) {
       const graphicConfigs = generateBatchConfigs(
@@ -156,11 +183,11 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
           const renderResult: RenderResult = {
             concept_index: conceptIndex,
             brief: briefs[conceptIndex],
-            art_direction: {} as ArtDirection,
+            art_direction: artDirections[conceptIndex],
             base_image: {
               buffer: imageBuffer,
               mime_type: "image/png",
-              prompt_used: "[graphic_design — programmatic, no AI]",
+              prompt_used: "[design_led — programmatic, no AI]",
             },
             edited_image: undefined,
             final_image: imageBuffer,
@@ -176,16 +203,13 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
 
           graphicRenders.set(conceptIndex, renderResult);
           onEvent({ type: "render_pass_1", index: conceptIndex, success: true });
-          console.log(`[Pipeline] Graphic engine SUCCESS for concept ${conceptIndex + 1}`);
         } catch (err) {
           console.error(`[Pipeline] Graphic engine FAILED for concept ${conceptIndex + 1}:`, err);
           onEvent({ type: "render_pass_1", index: conceptIndex, success: false });
-          // Fall back to Gemini for this concept
           geminiIndices.push(conceptIndex);
         }
       }
     } else {
-      // No product image loaded — fall back all to Gemini
       geminiIndices.push(...graphicIndices);
       graphicIndices.length = 0;
     }
@@ -197,36 +221,36 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   if (geminiIndices.length > 0) {
     onEvent({ type: "phase", phase: "E", message: `Moteur IA Gemini (${geminiIndices.length} concepts)...` });
 
-    // Build prompts only for Gemini concepts
+    // Build v3 prompts using ConceptSpec + AdDirectorSpec
+    const geminiConcepts = geminiIndices.map((i) => keptConcepts[i]);
+    const geminiAdDirs = geminiIndices.map((i) => adDirections[i]);
+    const geminiArtDirs = geminiIndices.map((i) => artDirections[i]);
     const geminiBriefs = geminiIndices.map((i) => briefs[i]);
-    const geminiDirections = geminiIndices.map((i) => artDirections[i]);
 
-    // Select references for Gemini concepts
+    // Select references using v2 ArtDirection adapter (reference-selector expects ArtDirection)
+    // Pass additional user-uploaded reference images if available
     let geminiRefs: SelectedReference[][];
-    if (strategy === "clean" && geminiDirections[0]) {
-      geminiRefs = selectReferencesBatch(
-        geminiDirections as ArtDirection[],
-        input.product?.imagePaths,
-      );
-    } else {
-      geminiRefs = selectReferencesFromBriefs(geminiBriefs, input.product?.imagePaths);
-    }
+    geminiRefs = selectReferencesBatch(
+      geminiArtDirs,
+      input.product?.imagePaths,
+      undefined, // inspirationPaths
+      input.additionalReferenceImages,
+    );
 
-    const geminiAdAssets = geminiIndices.map((i) => allCopyAssets[i]);
-
-    const geminiPrompts = buildPromptBatch(
-      geminiBriefs,
-      geminiDirections,
+    // Build prompts using v3 path
+    const geminiPrompts = buildPromptBatchV3(
+      geminiConcepts,
+      geminiAdDirs,
       context,
       geminiRefs,
       input.aspectRatio,
-      geminiAdAssets
     );
 
     geminiPrompts.forEach((p, gi) => {
       onEvent({ type: "prompt_built", index: geminiIndices[gi], prompt_preview: p.prompt_for_model.slice(0, 200) });
     });
 
+    // Render using v2 renderer (still expects CreativeBrief)
     const rawGeminiRenders = await renderBatch(
       geminiPrompts,
       geminiBriefs,
@@ -236,7 +260,7 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
 
     rawGeminiRenders.forEach((r, gi) => {
       r.concept_index = geminiIndices[gi];
-      r.art_direction = (artDirections[geminiIndices[gi]] || {}) as ArtDirection;
+      r.art_direction = geminiArtDirs[gi];
       geminiRenders.set(geminiIndices[gi], r);
     });
   }
@@ -245,7 +269,7 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   const renders: RenderResult[] = [];
   const prompts: BuiltPrompt[] = [];
 
-  for (let i = 0; i < briefs.length; i++) {
+  for (let i = 0; i < keptConcepts.length; i++) {
     const render = graphicRenders.get(i) || geminiRenders.get(i);
     if (render) {
       renders.push(render);
@@ -273,36 +297,38 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     }
   });
 
-  // ─── LAYER G: Composer (ALWAYS — both modes) ─────────────────
-  // Both strategies now generate text-free images and use the Composer
-  // to add text overlays via Sharp + SVG for pixel-perfect typography.
+  // ─── LAYER G: Composer (v3 — taxonomy-driven layout) ────────
+  const composedAds: ComposedAd[] = [];
+  const compositionGateVerdicts: GateVerdict[] = [];
 
-  let composedAds: ComposedAd[] = [];
-  let compositionGateVerdicts: GateVerdict[] = [];
-
-  onEvent({ type: "phase", phase: "G", message: "Composition des publicités finales (SVG text overlay)..." });
+  onEvent({ type: "phase", phase: "G", message: "Composition v3 des publicités (SVG text overlay)..." });
 
   for (let i = 0; i < renders.length; i++) {
+    const concept = keptConcepts[i];
     const brief = briefs[i];
-    const copyAssets = allCopyAssets[i]?.copyAssets || deriveCopyAssets(brief, context);
+    const copyAssets = allCopyAssets[i]?.copyAssets || deriveCopyAssetsV3(concept, context);
 
     onEvent({
       type: "composing",
       index: i,
-      layout: brief.overlayIntent || "headline_cta",
+      layout: concept.layout_family,
     });
 
     const composerInput: ComposerInput = {
       image: renders[i].final_image,
       mimeType: renders[i].final_mime_type,
       brief,
-      artDirection: (artDirections[i] || {}) as ArtDirection,
+      artDirection: artDirections[i],
       context,
-      renderMode: brief.renderMode || "scene_first",
-      overlayIntent: brief.overlayIntent || "headline_cta",
-      textDensity: brief.textDensity || "medium",
+      renderMode: concept.render_mode,
+      overlayIntent: concept.overlay_intent,
+      textDensity: concept.text_density,
       copyAssets,
       aspectRatio: input.aspectRatio,
+      // v3 additions
+      layoutFamily: concept.layout_family,
+      proofMechanism: concept.proof_mechanism,
+      formatFamily: concept.format_family,
     };
 
     const composed = await composeAd(composerInput);
@@ -340,8 +366,12 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   return {
     context,
     lock,
+    concepts: allConcepts,
+    scoredConcepts,
+    keptConcepts,
     briefs,
-    artDirections: artDirections.map((d) => (d || {}) as ArtDirection),
+    adDirections,
+    artDirections,
     prompts,
     renders,
     renderGateVerdicts,
@@ -353,10 +383,6 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
 
 // ─── HELPERS ─────────────────────────────────────────────────
 
-/**
- * Load the first available product image.
- * Used by the graphic engine for product compositing.
- */
 function loadFirstProductImage(productImagePaths?: string[]): Buffer | null {
   if (!productImagePaths?.length) return null;
 
@@ -374,42 +400,4 @@ function loadFirstProductImage(productImagePaths?: string[]): Buffer | null {
     }
   }
   return null;
-}
-
-// ─── Select references when art direction is skipped ─
-
-/**
- * Select references directly from briefs (when art direction is skipped).
- * Simply loads all product images as product_fidelity references.
- */
-function selectReferencesFromBriefs(
-  briefs: CreativeBrief[],
-  productImagePaths?: string[]
-): SelectedReference[][] {
-  if (!productImagePaths?.length) {
-    return briefs.map(() => []);
-  }
-
-  // Load product images once, share across all concepts
-  const loadedRefs: SelectedReference[] = [];
-  for (const imgPath of productImagePaths.slice(0, 3)) {
-    try {
-      const fullPath = path.isAbsolute(imgPath)
-        ? imgPath
-        : path.join(DATA_DIR, imgPath);
-
-      if (fs.existsSync(fullPath)) {
-        loadedRefs.push({
-          path: imgPath,
-          role: "product_fidelity",
-          buffer: fs.readFileSync(fullPath),
-        });
-      }
-    } catch {
-      console.warn(`[Pipeline] Failed to load product image: ${imgPath}`);
-    }
-  }
-
-  // Every concept gets the same product references
-  return briefs.map(() => [...loadedRefs]);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { useGeneration } from "@/contexts/generation-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -58,6 +59,7 @@ interface Product {
   name: string;
   usp: string | null;
   benefits: string[] | null;
+  imagePaths: string[] | null;
   [key: string]: unknown;
 }
 
@@ -75,23 +77,6 @@ interface Persona {
     decorStyle?: string;
   } | null;
   [key: string]: unknown;
-}
-
-interface GeneratedImage {
-  id: string;
-  url: string;
-  prompt: string;
-  concept?: string;
-  angle?: string;
-  level?: string;
-  emotion?: string;
-}
-
-interface Concept {
-  concept: string;
-  angle: string;
-  level: string;
-  emotion: string;
 }
 
 interface BrandGenerateClientProps {
@@ -117,7 +102,25 @@ export function BrandGenerateClient({
   documentsPrompt,
   inspirationPrompt,
 }: BrandGenerateClientProps) {
+  // Global generation state from context
+  const {
+    isGenerating,
+    phase,
+    phaseMessage,
+    progress,
+    batchStats,
+    error,
+    generatedImages,
+    concepts,
+    currentConcept,
+    startGeneration,
+    cancelGeneration,
+    clearResults,
+  } = useGeneration();
+
+  // Local UI state
   const [mode, setMode] = useState<GenerationMode>("ad");
+  const [localProducts, setLocalProducts] = useState<Product[]>(products);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [selectedFormatId, setSelectedFormatId] = useState("feed_square");
@@ -125,9 +128,11 @@ export function BrandGenerateClient({
   const [multiFormatMode, setMultiFormatMode] = useState(false);
   const [brief, setBrief] = useState("");
   const [batchCount, setBatchCount] = useState(5);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
-  const [error, setError] = useState<string | null>(null);
+
+  // Reference images (standard mode)
+  const [selectedRefPaths, setSelectedRefPaths] = useState<Set<string>>(new Set());
+  const [isUploadingRef, setIsUploadingRef] = useState(false);
+  const refUploadRef = useRef<HTMLInputElement>(null);
 
   // Custom mode
   const [customPrompts, setCustomPrompts] = useState("");
@@ -160,16 +165,6 @@ export function BrandGenerateClient({
     doNots?: string[];
     keyMessage?: string;
   } | null>(null);
-
-  // Batch progress
-  const [phase, setPhase] = useState<string>("");
-  const [phaseMessage, setPhaseMessage] = useState<string>("");
-  const [concepts, setConcepts] = useState<Concept[]>([]);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [currentConcept, setCurrentConcept] = useState<string>("");
-  const [batchStats, setBatchStats] = useState({ completed: 0, failed: 0 });
-
-  const abortRef = useRef<AbortController | null>(null);
 
   const selectedFormat = FORMAT_PRESETS.find((f) => f.id === selectedFormatId);
 
@@ -249,76 +244,64 @@ export function BrandGenerateClient({
   }, [brief]);
 
   // Shared SSE stream reader for all modes
-  const readSSEStream = useCallback(async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      setError("Pas de stream disponible");
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-
-          switch (event.type) {
-            case "phase":
-              setPhase(event.phase);
-              setPhaseMessage(event.message);
-              break;
-            case "concepts":
-              setConcepts(event.concepts);
-              break;
-            case "progress":
-              setProgress({ current: event.current, total: event.total });
-              if (event.concept) setCurrentConcept(event.concept);
-              break;
-            case "image":
-              setGeneratedImages((prev) => [
-                {
-                  id: event.id,
-                  url: event.url,
-                  prompt: event.concept || "",
-                  concept: event.concept,
-                  angle: event.angle || event.layout,
-                  level: event.level,
-                  emotion: event.emotion,
-                },
-                ...prev,
-              ]);
-              setBatchStats((s) => ({ ...s, completed: s.completed + 1 }));
-              break;
-            case "error":
-              setBatchStats((s) => ({ ...s, failed: s.failed + 1 }));
-              break;
-            case "complete":
-              setPhase("complete");
-              setPhaseMessage(
-                `Termine ! ${event.completed} visuels generes${event.failed > 0 ? `, ${event.failed} echecs` : ""}`
-              );
-              break;
-            case "fatal_error":
-              setError(event.error);
-              break;
-          }
-        } catch {
-          // Skip invalid JSON
-        }
+  // Toggle a product image path in the selected references
+  const handleToggleRefPath = useCallback((imgPath: string) => {
+    setSelectedRefPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(imgPath)) {
+        next.delete(imgPath);
+      } else {
+        next.add(imgPath);
       }
-    }
+      return next;
+    });
   }, []);
 
+  // Upload reference images → persist to product image bank + auto-select
+  const handleAddStandardRefImages = useCallback(async (files: FileList | null) => {
+    if (!files || !selectedProductId) return;
+    setIsUploadingRef(true);
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) continue;
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("productId", selectedProductId);
+        const res = await fetch("/api/products", { method: "POST", body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          // Update local product with new imagePaths from server
+          setLocalProducts((prev) =>
+            prev.map((p) =>
+              p.id === selectedProductId ? { ...p, imagePaths: data.imagePaths } : p
+            )
+          );
+          // Auto-select the newly uploaded image as reference
+          if (data.filePath) {
+            setSelectedRefPaths((prev) => {
+              const next = new Set(prev);
+              next.add(data.filePath);
+              return next;
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to upload reference image:", err);
+    } finally {
+      setIsUploadingRef(false);
+      // Reset file input so re-uploading the same file works
+      if (refUploadRef.current) refUploadRef.current.value = "";
+    }
+  }, [selectedProductId]);
+
+  // Reset reference selection when product changes
+  const handleProductChange = useCallback((productId: string | null) => {
+    setSelectedProductId(productId ?? "");
+    setSelectedRefPaths(new Set());
+  }, []);
+
+  // Custom mode handlers
   const handleAddRefImages = useCallback((files: FileList | null) => {
     if (!files) return;
     Array.from(files).forEach((file) => {
@@ -337,16 +320,6 @@ export function BrandGenerateClient({
   }, []);
 
   const handleBatchGenerate = useCallback(async () => {
-    setIsGenerating(true);
-    setError(null);
-    setPhase("starting");
-    setPhaseMessage("Demarrage...");
-    setConcepts([]);
-    setCurrentConcept("");
-    setBatchStats({ completed: 0, failed: 0 });
-
-    abortRef.current = new AbortController();
-
     // ─── CUSTOM MODE: direct prompts to Gemini ─────────────────
     if (mode === "custom") {
       const promptLines = customPrompts
@@ -354,54 +327,25 @@ export function BrandGenerateClient({
         .map((l) => l.trim())
         .filter((l) => l.length > 0);
 
-      if (promptLines.length === 0) {
-        setError("Collez au moins un prompt");
-        setIsGenerating(false);
-        return;
-      }
+      if (promptLines.length === 0) return;
 
-      setProgress({ current: 0, total: promptLines.length });
-
-      try {
-        const response = await fetch("/api/generate-custom", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            brandId: brand.id,
-            prompts: promptLines,
-            aspectRatio: selectedFormat?.aspectRatio || "1:1",
-            format: selectedFormatId,
-            globalReferenceImages: customRefImages.map((r) => r.base64),
-          }),
-          signal: abortRef.current!.signal,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          setError(data.error || "Erreur");
-          setIsGenerating(false);
-          return;
-        }
-
-        await readSSEStream(response);
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          setError((err as Error).message);
-        }
-      }
-
-      setIsGenerating(false);
-      abortRef.current = null;
+      await startGeneration({
+        endpoint: "/api/generate-custom",
+        body: {
+          brandId: brand.id,
+          prompts: promptLines,
+          aspectRatio: selectedFormat?.aspectRatio || "1:1",
+          format: selectedFormatId,
+          globalReferenceImages: customRefImages.map((r) => r.base64),
+        },
+        brandId: brand.id,
+        brandName: brand.name,
+        totalCount: promptLines.length,
+      });
       return;
     }
 
     // ─── STANDARD MODES (ad / visual) ──────────────────────────
-    setProgress({ current: 0, total: batchCount });
-
-    // Choose endpoint based on mode
-    const endpoint = mode === "ad" ? "/api/generate-ad" : "/api/generate-batch";
-
-    // Determine formats to generate
     const formatsToGenerate = multiFormatMode
       ? Array.from(selectedFormatIds).map((id) => {
           const preset = FORMAT_PRESETS.find((f) => f.id === id);
@@ -409,19 +353,11 @@ export function BrandGenerateClient({
         })
       : [{ id: selectedFormatId, aspectRatio: selectedFormat?.aspectRatio || "1:1" }];
 
-    for (const fmt of formatsToGenerate) {
-      if (abortRef.current?.signal.aborted) break;
-
-      if (formatsToGenerate.length > 1) {
-        const fmtLabel = FORMAT_PRESETS.find((f) => f.id === fmt.id)?.label || fmt.id;
-        setPhaseMessage(`Format : ${fmtLabel} (${fmt.aspectRatio})`);
-      }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    for (let i = 0; i < formatsToGenerate.length; i++) {
+      const fmt = formatsToGenerate[i];
+      await startGeneration({
+        endpoint: "/api/generate-batch",
+        body: {
           brandId: brand.id,
           productId: selectedProductId || undefined,
           personaId: selectedPersonaId || undefined,
@@ -429,38 +365,19 @@ export function BrandGenerateClient({
           format: fmt.id,
           aspectRatio: fmt.aspectRatio,
           count: batchCount,
-        }),
-        signal: abortRef.current!.signal,
+          renderStrategy: mode === "ad" ? "complete_ad" : "clean",
+          selectedImagePaths: selectedRefPaths.size > 0 ? Array.from(selectedRefPaths) : undefined,
+        },
+        brandId: brand.id,
+        brandName: brand.name,
+        totalCount: batchCount,
+        appendMode: i > 0, // Don't clear images between multi-format iterations
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data.error || "Erreur lors de la generation");
-        setIsGenerating(false);
-        return;
-      }
-
-      await readSSEStream(response);
-    } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setError((err as Error).message);
-      }
     }
-    } // end formatsToGenerate loop
-
-    setIsGenerating(false);
-    abortRef.current = null;
-
-    if (formatsToGenerate.length > 1) {
-      setPhase("complete");
-      setPhaseMessage(`Multi-format termine !`);
-    }
-  }, [brand.id, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds, customPrompts, customRefImages, readSSEStream]);
+  }, [brand.id, brand.name, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds, customPrompts, customRefImages, selectedRefPaths, startGeneration]);
 
   function handleCancel() {
-    abortRef.current?.abort();
-    setIsGenerating(false);
-    setPhase("");
+    cancelGeneration();
   }
 
   const contextCount = [
@@ -645,16 +562,16 @@ export function BrandGenerateClient({
             {/* Product selector */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Produit</label>
-              {products.length > 0 ? (
+              {localProducts.length > 0 ? (
                 <Select
                   value={selectedProductId}
-                  onValueChange={(v) => setSelectedProductId(v ?? "")}
+                  onValueChange={handleProductChange}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selectionner un produit" />
                   </SelectTrigger>
                   <SelectContent>
-                    {products.map((product) => (
+                    {localProducts.map((product) => (
                       <SelectItem key={product.id} value={product.id}>
                         {product.name}
                       </SelectItem>
@@ -670,6 +587,82 @@ export function BrandGenerateClient({
                 </a>
               )}
             </div>
+
+            {/* Reference images selector (appears when product is selected) */}
+            {selectedProductId && (() => {
+              const selectedProduct = localProducts.find((p) => p.id === selectedProductId);
+              const productImages = selectedProduct?.imagePaths || [];
+              return (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    Images de reference
+                  </label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Selectionnez les visuels produit a integrer dans les ads
+                  </p>
+
+                  {/* Product image bank */}
+                  {productImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {productImages.map((imgPath, i) => {
+                        const isSelected = selectedRefPaths.has(imgPath);
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => handleToggleRefPath(imgPath)}
+                            className={`relative group rounded-lg overflow-hidden border-2 transition-all ${
+                              isSelected
+                                ? "border-primary ring-2 ring-primary/30"
+                                : "border-transparent hover:border-muted-foreground/30"
+                            }`}
+                          >
+                            <img
+                              src={`/api/images/${encodeURIComponent(imgPath)}`}
+                              alt={`Produit ${i + 1}`}
+                              className="h-16 w-16 object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                                <CheckCircle2 className="h-5 w-5 text-primary drop-shadow" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Upload button to add images (persisted to product) */}
+                  <label className={`flex items-center justify-center gap-2 rounded-lg border border-dashed p-2 cursor-pointer hover:border-primary/50 transition-colors ${isUploadingRef ? "opacity-50 pointer-events-none" : ""}`}>
+                    {isUploadingRef ? (
+                      <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    <span className="text-[11px] text-muted-foreground">
+                      {isUploadingRef ? "Upload en cours..." : "Ajouter une image"}
+                    </span>
+                    <input
+                      ref={refUploadRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      disabled={isUploadingRef}
+                      onChange={(e) => handleAddStandardRefImages(e.target.files)}
+                    />
+                  </label>
+
+                  {/* Selection summary */}
+                  {selectedRefPaths.size > 0 && (
+                    <p className="text-[10px] text-primary font-medium">
+                      {selectedRefPaths.size} image(s) de reference selectionnee(s)
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Persona selector */}
             <div className="space-y-2">
