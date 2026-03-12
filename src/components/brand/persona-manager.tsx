@@ -15,7 +15,11 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Brain,
+  Eye,
 } from "lucide-react";
+import { RichPersonaPanel } from "@/components/persona/rich-persona-panel";
+import type { RichPersona } from "@/lib/db/schema";
 
 interface Persona {
   id: string;
@@ -42,6 +46,7 @@ interface Persona {
     decorStyle?: string;
   } | null;
   promptModifiers: string | null;
+  richProfile?: RichPersona | null;
 }
 
 export function PersonaManager({
@@ -56,6 +61,10 @@ export function PersonaManager({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
+
+  // Rich Persona AI state
+  const [generatingRichFor, setGeneratingRichFor] = useState<string | null>(null);
+  const [showRichPanelFor, setShowRichPanelFor] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -221,6 +230,96 @@ export function PersonaManager({
     }
   }
 
+  // Generate Rich Persona with AI (for existing persona)
+  async function handleGenerateRichPersona(personaId: string) {
+    setGeneratingRichFor(personaId);
+    try {
+      const res = await fetch("/api/personas/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          count: 1, // Only 1 for enriching existing persona
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.personas && data.personas.length > 0) {
+          const richProfile = data.personas[0];
+          // Update local state
+          setPersonas((prev) =>
+            prev.map((p) =>
+              p.id === personaId ? { ...p, richProfile } : p
+            )
+          );
+          setShowRichPanelFor(personaId);
+        }
+      } else {
+        const error = await res.json();
+        console.error("Generate rich persona error:", error);
+        alert(`Erreur: ${error.error || "Erreur inconnue"}`);
+      }
+    } catch (err) {
+      console.error("Generate rich persona error:", err);
+    } finally {
+      setGeneratingRichFor(null);
+    }
+  }
+
+  // Generate multiple new personas with AI
+  const [isGeneratingNewPersonas, setIsGeneratingNewPersonas] = useState(false);
+
+  async function handleGenerateNewPersonas() {
+    setIsGeneratingNewPersonas(true);
+    try {
+      const res = await fetch("/api/personas/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandId,
+          count: 3, // Generate 3 personas
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.personas && data.personas.length > 0) {
+          // Add new personas to the list
+          const newPersonas: Persona[] = data.personas.map((rp: RichPersona) => ({
+            id: rp.id,
+            name: rp.name,
+            description: rp.tagline,
+            demographics: {
+              ageRange: rp.demographics.ageRange,
+              gender: rp.demographics.gender,
+              location: rp.demographics.location,
+              income: rp.demographics.income,
+              lifestyle: rp.demographics.profession,
+            },
+            psychographics: {
+              painPoints: rp.psychographics.frustrations,
+              motivations: rp.psychographics.aspirations,
+              aesthetic: rp.languageProfile.preferredTone.join(", "),
+            },
+            visualStyle: null,
+            promptModifiers: null,
+            richProfile: rp,
+          }));
+          setPersonas((prev) => [...prev, ...newPersonas]);
+        }
+      } else {
+        const error = await res.json();
+        console.error("Generate personas error:", error);
+        alert(`Erreur: ${error.error || "Erreur inconnue"}`);
+      }
+    } catch (err) {
+      console.error("Generate personas error:", err);
+    } finally {
+      setIsGeneratingNewPersonas(false);
+    }
+  }
+
   function ArrayFieldEditor({
     label,
     placeholder,
@@ -277,10 +376,26 @@ export function PersonaManager({
           <Users className="h-5 w-5" />
           Personas ({personas.length})
         </h2>
-        <Button variant="outline" size="sm" onClick={() => setShowForm(!showForm)}>
-          <Plus className="mr-1 h-3 w-3" />
-          Ajouter
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleGenerateNewPersonas}
+            disabled={isGeneratingNewPersonas}
+            className="bg-indigo-600 hover:bg-indigo-700"
+          >
+            {isGeneratingNewPersonas ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <Brain className="mr-1 h-3 w-3" />
+            )}
+            Generer 3 personas IA
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowForm(!showForm)}>
+            <Plus className="mr-1 h-3 w-3" />
+            Ajouter manuel
+          </Button>
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -614,6 +729,57 @@ export function PersonaManager({
                     <p className="text-muted-foreground italic">{persona.promptModifiers}</p>
                   </div>
                 )}
+
+                {/* Rich Persona AI Section */}
+                <div className="border-t pt-3 mt-3">
+                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-indigo-600" />
+                    Persona Riche IA
+                  </h4>
+
+                  <div className="flex gap-2">
+                    {!persona.richProfile ? (
+                      <Button
+                        onClick={() => handleGenerateRichPersona(persona.id)}
+                        disabled={generatingRichFor === persona.id}
+                        variant="default"
+                        size="sm"
+                        className="bg-indigo-600 hover:bg-indigo-700"
+                      >
+                        {generatingRichFor === persona.id ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Brain className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Generer persona riche
+                      </Button>
+                    ) : (
+                      <Button
+                        variant={showRichPanelFor === persona.id ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          setShowRichPanelFor(
+                            showRichPanelFor === persona.id ? null : persona.id
+                          )
+                        }
+                      >
+                        <Eye className="mr-1.5 h-3.5 w-3.5" />
+                        {showRichPanelFor === persona.id ? "Masquer" : "Voir"} persona riche
+                      </Button>
+                    )}
+                  </div>
+
+                  <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-2">
+                    5 niveaux de desirs, psychologie d&apos;achat, triggers situationnels
+                  </p>
+
+                  {/* Rich Persona Panel */}
+                  {showRichPanelFor === persona.id && persona.richProfile && (
+                    <div className="mt-3">
+                      <RichPersonaPanel persona={persona.richProfile} />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>

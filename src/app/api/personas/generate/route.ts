@@ -26,7 +26,7 @@ import type { MarketingAngleSpec, RichPersona, PersonaDemographics } from "@/lib
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { brandId, productId, hints, count = 1 } = body as {
+    const { brandId, productId, hints, count = 3 } = body as {
       brandId: string;
       productId?: string;
       hints?: {

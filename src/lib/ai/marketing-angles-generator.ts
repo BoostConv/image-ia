@@ -136,11 +136,13 @@ Apres avoir genere les angles:
 
 ## REGLES
 
-- MINIMUM 4 angles (1 par type EPIC)
-- Chaque angle = RADICALEMENT different
+- GENERER 8 A 12 ANGLES AU TOTAL (2-3 par type EPIC)
+- Pour chaque type EPIC (Emotional, Practical, Identity, Critical), generer 2-3 angles DIFFERENTS
+- Chaque angle = RADICALEMENT different meme au sein du meme type EPIC
 - Les hooks doivent etre SPECIFIQUES au produit
 - Les narratives doivent etre ACTIONABLES
 - Lier chaque angle aux personas si fournis
+- VARIER les terrains, temperatures et emotions entre les angles du meme type
 
 Reponds UNIQUEMENT en JSON valide, sans texte avant ou apres.`,
       messages: [

@@ -20,7 +20,13 @@ import {
   Sparkles,
   Pencil,
   Check,
+  Brain,
+  Target,
+  Zap,
 } from "lucide-react";
+import { ProductAnalysisPanel } from "@/components/product/product-analysis-panel";
+import { AnglesPanel } from "@/components/marketing/angles-panel";
+import type { ProductAnalysis, MarketingAngleSpec, AnglesPrioritization } from "@/lib/db/schema";
 import Image from "next/image";
 
 function getImageUrl(relativePath: string): string {
@@ -45,6 +51,7 @@ interface Product {
   } | null;
   targetAudience: string | null;
   competitiveAdvantage: string | null;
+  productAnalysis?: ProductAnalysis | null;
 }
 
 export function ProductManager({
@@ -65,6 +72,14 @@ export function ProductManager({
   const imageFileRef = useRef<HTMLInputElement>(null);
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeUrl, setScrapeUrl] = useState("");
+
+  // AI Analysis state
+  const [analyzingProductId, setAnalyzingProductId] = useState<string | null>(null);
+  const [generatingAnglesFor, setGeneratingAnglesFor] = useState<string | null>(null);
+  const [productAngles, setProductAngles] = useState<Record<string, AnglesPrioritization>>({});
+  const [showAnalysisFor, setShowAnalysisFor] = useState<string | null>(null);
+  const [showAnglesFor, setShowAnglesFor] = useState<string | null>(null);
+  const [analyzeUrl, setAnalyzeUrl] = useState<Record<string, string>>({});
 
   // Form state
   const [name, setName] = useState("");
@@ -117,6 +132,66 @@ export function ProductManager({
       console.error("Scrape error:", err);
     } finally {
       setIsScraping(false);
+    }
+  }
+
+  // AI Analysis: Analyze product with Claude
+  async function handleAnalyzeProduct(productId: string) {
+    const url = analyzeUrl[productId];
+    if (!url?.trim()) return;
+
+    setAnalyzingProductId(productId);
+    try {
+      const res = await fetch(`/api/products/${productId}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productUrl: url }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === productId ? { ...p, productAnalysis: data.analysis } : p
+          )
+        );
+        setShowAnalysisFor(productId);
+        setAnalyzeUrl((prev) => ({ ...prev, [productId]: "" }));
+      } else {
+        const error = await res.json();
+        console.error("Analysis error:", error);
+        alert(`Erreur d'analyse: ${error.error || "Erreur inconnue"}`);
+      }
+    } catch (err) {
+      console.error("Analysis error:", err);
+    } finally {
+      setAnalyzingProductId(null);
+    }
+  }
+
+  // Generate EPIC marketing angles
+  async function handleGenerateAngles(productId: string) {
+    setGeneratingAnglesFor(productId);
+    try {
+      const res = await fetch(`/api/products/${productId}/angles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProductAngles((prev) => ({ ...prev, [productId]: data.angles }));
+        setShowAnglesFor(productId);
+      } else {
+        const error = await res.json();
+        console.error("Angles error:", error);
+        alert(`Erreur: ${error.error || "Erreur inconnue"}`);
+      }
+    } catch (err) {
+      console.error("Angles error:", err);
+    } finally {
+      setGeneratingAnglesFor(null);
     }
   }
 
@@ -716,6 +791,111 @@ export function ProductManager({
                     <p className="text-xs">{product.competitiveAdvantage}</p>
                   </div>
                 )}
+
+                {/* AI Analysis Section */}
+                <div className="border-t pt-3 mt-3">
+                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-purple-600" />
+                    Analyse IA
+                  </h4>
+
+                  {/* Analyze URL input */}
+                  {!product.productAnalysis && (
+                    <div className="space-y-2 p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                      <label className="text-xs font-medium text-purple-700 dark:text-purple-400">
+                        URL produit pour analyse IA
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={analyzeUrl[product.id] || ""}
+                          onChange={(e) =>
+                            setAnalyzeUrl((prev) => ({ ...prev, [product.id]: e.target.value }))
+                          }
+                          placeholder="https://example.com/produit"
+                          className="text-sm"
+                        />
+                        <Button
+                          onClick={() => handleAnalyzeProduct(product.id)}
+                          disabled={analyzingProductId === product.id || !analyzeUrl[product.id]?.trim()}
+                          variant="default"
+                          size="sm"
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          {analyzingProductId === product.id ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Brain className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          Analyser
+                        </Button>
+                      </div>
+                      <p className="text-[10px] text-purple-600 dark:text-purple-400">
+                        Genere FAB, USP, DUR, objections, arguments de vente via Claude AI
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Show Analysis Button + Panel */}
+                  {product.productAnalysis && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Button
+                          variant={showAnalysisFor === product.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() =>
+                            setShowAnalysisFor(showAnalysisFor === product.id ? null : product.id)
+                          }
+                        >
+                          <Target className="mr-1.5 h-3.5 w-3.5" />
+                          {showAnalysisFor === product.id ? "Masquer analyse" : "Voir analyse"}
+                        </Button>
+                        <Button
+                          variant={showAnglesFor === product.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => {
+                            if (!productAngles[product.id]) {
+                              handleGenerateAngles(product.id);
+                            } else {
+                              setShowAnglesFor(showAnglesFor === product.id ? null : product.id);
+                            }
+                          }}
+                          disabled={generatingAnglesFor === product.id}
+                        >
+                          {generatingAnglesFor === product.id ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Zap className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          {productAngles[product.id]
+                            ? showAnglesFor === product.id
+                              ? "Masquer angles"
+                              : "Voir angles EPIC"
+                            : "Generer angles EPIC"}
+                        </Button>
+                      </div>
+
+                      {/* Analysis Panel */}
+                      {showAnalysisFor === product.id && product.productAnalysis && (
+                        <div className="mt-3">
+                          <ProductAnalysisPanel
+                            analysis={product.productAnalysis}
+                            productName={product.name}
+                          />
+                        </div>
+                      )}
+
+                      {/* Angles Panel */}
+                      {showAnglesFor === product.id && productAngles[product.id] && (
+                        <div className="mt-3">
+                          <AnglesPanel
+                            anglesData={productAngles[product.id]}
+                            productName={product.name}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
