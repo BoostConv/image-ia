@@ -283,6 +283,9 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       : undefined;
 
     // Select references using V4 (with layout inspiration support)
+    console.log(`[Pipeline] Product imagePaths: ${JSON.stringify(input.product?.imagePaths?.slice(0, 3))}`);
+    console.log(`[Pipeline] hasProductImages: ${hasProductImages}, additionalRefs: ${input.additionalReferenceImages?.length || 0}`);
+
     const geminiRefs = await selectReferencesBatchV4(
       geminiArtDirs.map((dir, i) => ({
         direction: dir,
@@ -293,6 +296,12 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
         brandStyleImagePaths: input.brandStyleImagePaths,
       }))
     );
+
+    // Log reference selection results
+    geminiRefs.forEach((refs, i) => {
+      const roles = refs.map(r => `${r.role}(${r.buffer ? r.buffer.length : 'no-buf'})`);
+      console.log(`[Pipeline] Concept ${i + 1} refs: [${roles.join(', ')}]`);
+    });
 
     // ─── Phase 5+: Build prompts using AD-FOCUSED builder ────
     // Include copy assets so Gemini renders text directly in the image
