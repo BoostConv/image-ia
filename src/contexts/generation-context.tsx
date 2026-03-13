@@ -147,9 +147,16 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
               break;
             case "complete":
               setPhase("complete");
-              setPhaseMessage(
-                `Termine ! ${event.completed} visuels generes${event.failed > 0 ? `, ${event.failed} echecs` : ""}`
-              );
+              if (event.completed === 0) {
+                setError(
+                  `Aucun visuel genere sur ${event.total} demandes. L'API de generation d'images a echoue. Verifiez votre cle API et les logs serveur.`
+                );
+                setPhaseMessage("Echec de la generation");
+              } else {
+                setPhaseMessage(
+                  `Termine ! ${event.completed} visuels generes${event.failed > 0 ? `, ${event.failed} echecs` : ""}`
+                );
+              }
               break;
             case "fatal_error":
               setError(event.error);

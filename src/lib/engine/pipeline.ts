@@ -323,6 +323,19 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       r.art_direction = geminiArtDirs[gi];
       geminiRenders.set(geminiIndices[gi], r);
     });
+
+    // Report render errors if any
+    const renderErrors = (rawGeminiRenders as any).__renderErrors as { index: number; error: string }[] | undefined;
+    if (renderErrors?.length) {
+      renderErrors.forEach((re) => {
+        onEvent({ type: "error", index: re.index, error: `Render échoué: ${re.error}` });
+      });
+    }
+
+    if (rawGeminiRenders.length === 0) {
+      const errorDetail = renderErrors?.map((e) => e.error).join("; ") || "Erreur inconnue";
+      console.error(`[Pipeline] ALL Gemini renders failed: ${errorDetail}`);
+    }
   }
 
   // ─── Merge renders (maintain original order) ───────────────

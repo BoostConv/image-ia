@@ -284,6 +284,18 @@ export async function POST(request: NextRequest) {
           let failed = 0;
           const subDir = getSubDir(generationId);
 
+          if (result.renders.length === 0) {
+            send({
+              type: "fatal_error",
+              error: "Aucun visuel n'a pu être généré. L'API Gemini a échoué sur tous les concepts. Vérifiez les logs serveur pour plus de détails.",
+            });
+            await updateGenerationStatus(generationId, "failed", {
+              errorMessage: "Tous les renders ont échoué",
+            });
+            controller.close();
+            return;
+          }
+
           for (let i = 0; i < result.renders.length; i++) {
             const render = result.renders[i];
             const composedAd = result.composedAds[i];

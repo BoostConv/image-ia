@@ -153,8 +153,12 @@ export async function renderBatch(
       }
       results.push(result);
     } catch (err) {
-      console.error(`[Renderer] Concept ${i + 1} completely failed:`, err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[Renderer] Concept ${i + 1} completely failed:`, errMsg);
       onPass1?.(i, false);
+      // Store the error for upstream reporting
+      (results as any).__renderErrors = (results as any).__renderErrors || [];
+      (results as any).__renderErrors.push({ index: i, error: errMsg });
       // Continue with other concepts — don't fail the whole batch
     }
 
