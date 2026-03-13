@@ -97,7 +97,11 @@ export async function scrapeProductPage(url: string): Promise<RawProductData> {
   });
 
   // Extract variants (flavors, colors, sizes)
-  const variants = extractVariants($, url);
+  // Try Shopify JSON API first (most reliable), then embedded JSON, then DOM parsing
+  const variants =
+    (await extractShopifyJsonApi(url)) ||
+    extractShopifyVariants($, url) ||
+    extractVariants($, url);
 
   // Extract full text (limited)
   const fullText =
@@ -117,6 +121,161 @@ export async function scrapeProductPage(url: string): Promise<RawProductData> {
     variants: variants.length > 0 ? variants : undefined,
     fullText,
   };
+}
+
+/**
+ * Try to fetch variants from the Shopify Product JSON API ({url}.json).
+ * This is the most reliable method for Shopify stores.
+ */
+async function extractShopifyJsonApi(url: string): Promise<RawVariant[] | null> {
+  try {
+    // Shopify product pages expose a .json endpoint
+    const jsonUrl = url.replace(/\/?(\?.*)?$/, ".json$1");
+    const res = await fetch(jsonUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const product = data?.product;
+    if (!product?.variants || !Array.isArray(product.variants)) return null;
+
+    const optionName = product.options?.[0]?.name || product.options?.[0] || "Variante";
+    const variants: RawVariant[] = [];
+    const seenNames = new Set<string>();
+
+    for (const v of product.variants) {
+      const name = v.title || v.option1;
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+
+      const images: string[] = [];
+      const imgSrc = v.featured_image?.src;
+      if (imgSrc) {
+        images.push(imgSrc.startsWith("//") ? `https:${imgSrc}` : imgSrc);
+      }
+
+      variants.push({
+        name,
+        type: normalizeVariantType(typeof optionName === "string" ? optionName : "Variante"),
+        images,
+      });
+    }
+
+    return variants.length > 0 ? variants : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract variants from Shopify product JSON embedded in the page.
+ * Shopify stores variant data in script tags or structured data.
+ * Returns null if not a Shopify page.
+ */
+function extractShopifyVariants($: cheerio.CheerioAPI, baseUrl: string): RawVariant[] | null {
+  // Look for Shopify product JSON in script tags
+  let productJson: any = null;
+
+  $("script:not([src])").each((_, el) => {
+    const text = $(el).html() || "";
+
+    // Pattern 1: var meta = { product: { variants: [...] } }
+    const metaMatch = text.match(/var\s+meta\s*=\s*(\{[\s\S]*?\});/);
+    if (metaMatch) {
+      try {
+        const meta = JSON.parse(metaMatch[1]);
+        if (meta?.product?.variants) {
+          productJson = meta.product;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Pattern 2: "variants": [...] in product JSON
+    if (!productJson) {
+      const variantsMatch = text.match(/"variants"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
+      if (variantsMatch) {
+        try {
+          const variants = JSON.parse(variantsMatch[1]);
+          if (Array.isArray(variants) && variants.length > 0 && variants[0].title) {
+            productJson = { variants, options: [] };
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Pattern 3: ShopifyAnalytics or product JSON object
+    if (!productJson) {
+      const productMatch = text.match(/product\s*(?::|=)\s*(\{[\s\S]*?"variants"\s*:\s*\[[\s\S]*?\][\s\S]*?\})/);
+      if (productMatch) {
+        try {
+          productJson = JSON.parse(productMatch[1]);
+        } catch { /* ignore */ }
+      }
+    }
+  });
+
+  // Also check for JSON-LD structured data
+  if (!productJson) {
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const ld = JSON.parse($(el).html() || "");
+        if (ld["@type"] === "Product" && ld.offers) {
+          // JSON-LD doesn't have great variant info, skip
+        }
+      } catch { /* ignore */ }
+    });
+  }
+
+  if (!productJson?.variants || !Array.isArray(productJson.variants)) {
+    return null;
+  }
+
+  // Determine option names (e.g., "Goût", "Taille")
+  const optionNames: string[] = productJson.options || [];
+
+  // Group by option values
+  const variants: RawVariant[] = [];
+  const seenNames = new Set<string>();
+
+  for (const v of productJson.variants) {
+    const name = v.title || v.option1 || v.name;
+    if (!name || seenNames.has(name)) continue;
+    seenNames.add(name);
+
+    // Determine variant type from option names
+    const type = optionNames.length > 0
+      ? normalizeVariantType(optionNames[0])
+      : (v.option2 ? "Variante" : guessVariantType(name));
+
+    // Get variant image
+    const images: string[] = [];
+    const featuredImage = v.featured_image?.src || v.image?.src || v.featured_image;
+    if (featuredImage && typeof featuredImage === "string") {
+      images.push(resolveUrl(featuredImage.replace(/^\/\//, "https://"), baseUrl));
+    }
+
+    variants.push({ name, type, images });
+  }
+
+  return variants.length > 0 ? variants : null;
+}
+
+/**
+ * Guess variant type from the variant name itself.
+ */
+function guessVariantType(name: string): string {
+  const lower = name.toLowerCase();
+  // Size patterns
+  if (/^\d+\s*(ml|g|kg|l|oz|cl)\b/.test(lower) || /^(xs|s|m|l|xl|xxl)$/i.test(lower)) return "Taille";
+  // Color patterns (hex or common colors)
+  if (/^#[0-9a-f]{6}$/i.test(lower) || /^(noir|blanc|rouge|bleu|vert|rose|gris|beige|black|white|red|blue|green|pink)$/i.test(lower)) return "Couleur";
+  return "Goût";
 }
 
 /**

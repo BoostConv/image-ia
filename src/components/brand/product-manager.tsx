@@ -71,7 +71,7 @@ export function ProductManager({
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [showForm, setShowForm] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Product>>({});
@@ -90,19 +90,7 @@ export function ProductManager({
   const [showAnglesFor, setShowAnglesFor] = useState<string | null>(null);
   const [selectedPersonaFor, setSelectedPersonaFor] = useState<Record<string, string>>({});
 
-  // Form state (manual creation)
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [usp, setUsp] = useState("");
-  const [positioning, setPositioning] = useState("");
-  const [targetAudience, setTargetAudience] = useState("");
-  const [competitiveAdvantage, setCompetitiveAdvantage] = useState("");
-  const [benefits, setBenefits] = useState<string[]>([""]);
-  const [headlines, setHeadlines] = useState<string[]>([""]);
-  const [hooks, setHooks] = useState<string[]>([""]);
-  const [callToActions, setCallToActions] = useState<string[]>([""]);
-  const [emotionalTriggers, setEmotionalTriggers] = useState<string[]>([""]);
-  const [socialProof, setSocialProof] = useState<string[]>([""]);
+
 
   // Create product from URL: scrape + create + AI analysis in one shot
   async function handleCreateFromUrl() {
@@ -212,83 +200,6 @@ export function ProductManager({
         },
       };
     });
-  }
-
-  function resetForm() {
-    setName("");
-    setCategory("");
-    setUsp("");
-    setPositioning("");
-    setTargetAudience("");
-    setCompetitiveAdvantage("");
-    setBenefits([""]);
-    setHeadlines([""]);
-    setHooks([""]);
-    setCallToActions([""]);
-    setEmotionalTriggers([""]);
-    setSocialProof([""]);
-  }
-
-  async function handleSubmit() {
-    if (!name.trim()) return;
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brandId,
-          name,
-          category: category || undefined,
-          usp: usp || undefined,
-          benefits: benefits.filter(Boolean),
-          positioning: positioning || undefined,
-          targetAudience: targetAudience || undefined,
-          competitiveAdvantage: competitiveAdvantage || undefined,
-          marketingArguments: {
-            headlines: headlines.filter(Boolean),
-            hooks: hooks.filter(Boolean),
-            callToActions: callToActions.filter(Boolean),
-            emotionalTriggers: emotionalTriggers.filter(Boolean),
-            socialProof: socialProof.filter(Boolean),
-            guarantees: [],
-          },
-          imagePaths: undefined,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setProducts((prev) => [
-          ...prev,
-          {
-            id: data.id,
-            name,
-            category: category || null,
-            usp: usp || null,
-            benefits: benefits.filter(Boolean),
-            positioning: positioning || null,
-            imagePaths: null,
-            variants: null,
-            marketingArguments: {
-              headlines: headlines.filter(Boolean),
-              hooks: hooks.filter(Boolean),
-              callToActions: callToActions.filter(Boolean),
-              emotionalTriggers: emotionalTriggers.filter(Boolean),
-              socialProof: socialProof.filter(Boolean),
-              guarantees: [],
-            },
-            targetAudience: targetAudience || null,
-            competitiveAdvantage: competitiveAdvantage || null,
-          },
-        ]);
-        resetForm();
-        setShowForm(false);
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
   }
 
   async function handleDelete(id: string) {
@@ -429,71 +340,6 @@ export function ProductManager({
     }
   }
 
-  function updateArrayField(
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-    index: number,
-    value: string
-  ) {
-    setter((prev) => prev.map((v, i) => (i === index ? value : v)));
-  }
-
-  function addArrayField(setter: React.Dispatch<React.SetStateAction<string[]>>) {
-    setter((prev) => [...prev, ""]);
-  }
-
-  function removeArrayField(
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-    index: number
-  ) {
-    setter((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function ArrayFieldEditor({
-    label,
-    placeholder,
-    values,
-    setter,
-  }: {
-    label: string;
-    placeholder: string;
-    values: string[];
-    setter: React.Dispatch<React.SetStateAction<string[]>>;
-  }) {
-    return (
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">{label}</label>
-        {values.map((val, i) => (
-          <div key={i} className="flex gap-1.5">
-            <Input
-              value={val}
-              onChange={(e) => updateArrayField(setter, i, e.target.value)}
-              placeholder={`${placeholder} ${i + 1}`}
-              className="text-xs h-8"
-            />
-            {values.length > 1 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => removeArrayField(setter, i)}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        ))}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 text-xs"
-          onClick={() => addArrayField(setter)}
-        >
-          <Plus className="mr-1 h-2.5 w-2.5" />
-          Ajouter
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-3">
@@ -550,127 +396,9 @@ export function ProductManager({
               </p>
             </div>
 
-            <div className="relative flex items-center py-1">
-              <div className="flex-grow border-t border-muted-foreground/20" />
-              <span className="mx-3 text-xs text-muted-foreground">ou creation manuelle</span>
-              <div className="flex-grow border-t border-muted-foreground/20" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Nom du produit *</label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Serum Vitamine C"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Categorie</label>
-                <Input
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="Ex: Skincare, Chaussures..."
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">USP (argument unique)</label>
-              <Textarea
-                value={usp}
-                onChange={(e) => setUsp(e.target.value)}
-                placeholder="Qu'est-ce qui rend ce produit unique et irreplacable ?"
-                rows={2}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Positionnement</label>
-                <Input
-                  value={positioning}
-                  onChange={(e) => setPositioning(e.target.value)}
-                  placeholder="Ex: Premium, Mass market..."
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Audience cible</label>
-                <Input
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                  placeholder="Ex: Femmes 25-40, CSP+..."
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Avantage concurrentiel</label>
-              <Textarea
-                value={competitiveAdvantage}
-                onChange={(e) => setCompetitiveAdvantage(e.target.value)}
-                placeholder="Pourquoi choisir ce produit plutot qu'un concurrent ?"
-                rows={2}
-              />
-            </div>
-
-            <ArrayFieldEditor
-              label="Benefices cles"
-              placeholder="Benefice"
-              values={benefits}
-              setter={setBenefits}
-            />
-
-            <div className="border-t pt-3">
-              <h4 className="text-sm font-semibold mb-3">Arguments marketing</h4>
-
-              <div className="space-y-3">
-                <ArrayFieldEditor
-                  label="Headlines / Accroches"
-                  placeholder="Headline"
-                  values={headlines}
-                  setter={setHeadlines}
-                />
-                <ArrayFieldEditor
-                  label="Hooks (phrases d'accroche)"
-                  placeholder="Hook"
-                  values={hooks}
-                  setter={setHooks}
-                />
-                <ArrayFieldEditor
-                  label="Call to Actions"
-                  placeholder="CTA"
-                  values={callToActions}
-                  setter={setCallToActions}
-                />
-                <ArrayFieldEditor
-                  label="Triggers emotionnels"
-                  placeholder="Trigger"
-                  values={emotionalTriggers}
-                  setter={setEmotionalTriggers}
-                />
-                <ArrayFieldEditor
-                  label="Preuves sociales"
-                  placeholder="Preuve"
-                  values={socialProof}
-                  setter={setSocialProof}
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleSubmit} disabled={isSubmitting || !name.trim()}>
-                {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Creer le produit
-              </Button>
-              <Button variant="ghost" onClick={() => { setShowForm(false); resetForm(); }}>
-                Annuler
-              </Button>
-            </div>
+            <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setCreateUrl(""); }}>
+              Annuler
+            </Button>
           </CardContent>
         </Card>
       )}
