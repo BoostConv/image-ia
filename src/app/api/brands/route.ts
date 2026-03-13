@@ -4,6 +4,7 @@ import {
   createBrand,
   createProduct,
   createPersona,
+  deleteBrand,
 } from "@/lib/db/queries/brands";
 import { db } from "@/lib/db";
 import { brands as brandsTable } from "@/lib/db/schema";
@@ -94,6 +95,23 @@ export async function POST(request: NextRequest) {
     console.error("Brand creation error:", error);
     return NextResponse.json(
       { error: "Erreur lors de la creation de la marque" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json({ error: "ID requis" }, { status: 400 });
+    }
+    await deleteBrand(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Brand deletion error:", error);
+    return NextResponse.json(
+      { error: "Erreur lors de la suppression de la marque" },
       { status: 500 }
     );
   }

@@ -146,6 +146,30 @@ async function extractShopifyJsonApi(url: string): Promise<RawVariant[] | null> 
     if (!product?.variants || !Array.isArray(product.variants)) return null;
 
     const optionName = product.options?.[0]?.name || product.options?.[0] || "Variante";
+
+    // Build variant_id → variant_name map
+    const variantIdToName = new Map<number, string>();
+    for (const v of product.variants) {
+      const name = v.title || v.option1;
+      if (name) variantIdToName.set(v.id, name);
+    }
+
+    // Build variant_name → images from product.images[].variant_ids
+    const variantImages = new Map<string, string[]>();
+    if (Array.isArray(product.images)) {
+      for (const img of product.images) {
+        if (!img.src || !Array.isArray(img.variant_ids)) continue;
+        const imgUrl = img.src.startsWith("//") ? `https:${img.src}` : img.src;
+        for (const vid of img.variant_ids) {
+          const vName = variantIdToName.get(vid);
+          if (vName) {
+            if (!variantImages.has(vName)) variantImages.set(vName, []);
+            variantImages.get(vName)!.push(imgUrl);
+          }
+        }
+      }
+    }
+
     const variants: RawVariant[] = [];
     const seenNames = new Set<string>();
 
@@ -154,10 +178,16 @@ async function extractShopifyJsonApi(url: string): Promise<RawVariant[] | null> 
       if (!name || seenNames.has(name)) continue;
       seenNames.add(name);
 
+      // Priority: featured_image > product.images with variant_ids
       const images: string[] = [];
       const imgSrc = v.featured_image?.src;
       if (imgSrc) {
         images.push(imgSrc.startsWith("//") ? `https:${imgSrc}` : imgSrc);
+      }
+      // Add images from product.images that reference this variant
+      const mappedImages = variantImages.get(name) || [];
+      for (const mi of mappedImages) {
+        if (!images.includes(mi)) images.push(mi);
       }
 
       variants.push({
