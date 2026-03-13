@@ -444,6 +444,13 @@ export const brands = pgTable("brands", {
     .notNull(),
 });
 
+export interface ProductVariant {
+  id: string;           // nanoid
+  name: string;         // e.g., "Chocolat", "Vanille", "Rouge XL"
+  type: string;         // e.g., "Goût", "Couleur", "Taille"
+  imagePaths: string[]; // images specific to this variant
+}
+
 export const products = pgTable("products", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
@@ -459,6 +466,7 @@ export const products = pgTable("products", {
   season: text("season"),
   usageContext: text("usage_context"),
   imagePaths: jsonb("image_paths").$type<string[]>(),
+  variants: jsonb("variants").$type<ProductVariant[]>(),
   marketingArguments: jsonb("marketing_arguments").$type<{
     headlines: string[];
     hooks: string[];
