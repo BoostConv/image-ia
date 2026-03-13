@@ -12,6 +12,7 @@ import type {
 import { callClaudeWithRetry } from "../ai/claude-retry";
 import { getKnowledgeForStage } from "./knowledge";
 import type { AwarenessLevel } from "./knowledge";
+import { getBaseImageCalibrationDirective, getComposedAdCalibrationDirective } from "./knowledge/evaluator-calibration";
 
 // ============================================================
 // COMPONENT K: DUAL EVALUATOR
@@ -51,6 +52,8 @@ ${(() => {
   const k = getKnowledgeForStage("evaluator", awareness);
   return k.visual_rules;
 })()}
+
+${getBaseImageCalibrationDirective()}
 
 Reponds UNIQUEMENT en JSON valide.`,
     messages: [
@@ -164,6 +167,8 @@ Chaque score de 1 a 10. Sois SEVERE. Un 7 = pro correct.
 
 CRITERES COPY: Max 7 mots pour headline sur image. Mots puissants (Gratuit, Nouveau, Garanti)? Ton conversationnel? Specifique?
 CRITERES VISUELS: Pattern Z respecte? Point focal unique? Contraste CTA suffisant? Lisible en 0.3s sur mobile?
+
+${getComposedAdCalibrationDirective()}
 
 Reponds UNIQUEMENT en JSON valide.`,
     messages: [
@@ -323,7 +328,7 @@ Promesse : ${context.promise}
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
     system:
-      "Tu es un media buyer expert Meta ads. Compare des pubs composees finales et designe les meilleures. Reponds UNIQUEMENT en JSON valide.",
+      "Tu es un media buyer expert Meta ads. Compare des pubs composees finales et designe les meilleures. Sois DISCRIMINANT — si deux pubs sont mediocres, dis-le clairement dans le rationale. Ne cherche pas a etre gentil. Reponds UNIQUEMENT en JSON valide.",
     messages: [{ role: "user", content: imageContents }],
   }));
 

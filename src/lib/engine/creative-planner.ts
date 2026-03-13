@@ -28,6 +28,7 @@ import {
   AWARENESS_STAGES,
   MARKETING_LEVERS,
   formatTaxonomyForPrompt,
+  formatTaxonomyCompactForPrompt,
   getCompatibleFormats,
   getDefaultLayout,
   getDefaultProof,
@@ -48,6 +49,10 @@ import type {
   MarketingLever,
 } from "./taxonomy";
 import { formatPolicyForPrompt } from "./brand-style-policy";
+import type { CreativeMemory } from "../db/queries/creative-memory";
+import { formatCreativeMemoryDirective } from "../db/queries/creative-memory";
+import type { BrandDAFingerprint } from "./brand-da-analyzer";
+import { formatDAFingerprintForPrompt } from "./brand-da-analyzer";
 
 // ============================================================
 // LAYER B: CONCEPT PLANNER — Pipeline v3
@@ -132,7 +137,9 @@ export async function planConcepts(
   count: number,
   policy: BrandStylePolicy,
   lock?: BatchLockConfig,
-  hasProductImages?: boolean
+  hasProductImages?: boolean,
+  memory?: CreativeMemory,
+  daFingerprint?: BrandDAFingerprint,
 ): Promise<ConceptSpec[]> {
   const client = getClient();
   const awareness = (context.awareness_level || "problem_aware") as AwarenessStage;
@@ -153,7 +160,15 @@ export async function planConcepts(
     client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 8000,
-      system: `Tu es un stratege publicitaire et directeur creatif de classe mondiale specialise dans les Meta ads haute performance.
+      system: `Tu es un expert senior en creation d'ads statiques pour le e-commerce DTC. Tu combines les competences d'un directeur artistique, d'un copywriter direct-response, et d'un stratege marketing. Tu produis des ads 'banger' — des ads qui arretent le scroll, creent une emotion, et generent du clic.
+
+## TES PRINCIPES FONDATEURS (Mark Morgan Ford + Hopkins + Makepeace)
+
+1. LA PUB C'EST DE LA VENTE, PAS DE LA LITTERATURE (Hopkins) — Pas de formulations poetiques. Un vendeur qui parle a une personne. Chaque mot doit vendre, pas impressionner.
+2. SPECIFIQUE, CONCRET, ZERO DEDUCTION — Si le prospect doit reflechir pour comprendre, le copy est rate. Compris en 1 seconde.
+3. EMOTION D'ABORD, LOGIQUE ENSUITE — La headline fait RESSENTIR. Le sous-texte INFORME. Toujours dans cet ordre.
+4. DON'T FORCE. TEMPT. — Ne pas lister des arguments. Faire ressentir l'experience. Le visuel et le copy tentent, pas forcent.
+5. LE MEILLEUR CONCEPT N'A PAS BESOIN DE BEAUCOUP DE MOTS — Si un concept a besoin de 50+ mots, il n'est pas fait pour le format static ad.
 
 ## TA METHODE : CONCEPT-FIRST (Pipeline v3)
 
@@ -175,54 +190,69 @@ Tu DOIS penser dans cet ORDRE :
    NUL : "DE 'pas bien' → VERS 'bien'"
 
 3. **customer_insight** = Une VERITE sur la VIE du client, PAS un benefice produit.
+   Framework: Reponds mentalement a: "Qu'est-ce qui empeche ce persona de dormir a 3h du matin?"
 
 4. **Chaque concept = RADICALEMENT different** : levier different, scene differente, emotion differente.
+   Diversifier: patterns, sous-types, mecanismes headline, layouts, registres emotionnels.
 
 5. **Tous les champs taxonomiques DOIVENT venir des listes fermees ci-dessous.**
+
+## LES 13 MECANISMES DE HEADLINE
+
+1. Interpellation directe (probleme nomme): "Ton ado transpire et les deos ne tiennent pas"
+2. Situation Recognition (moment de vie precis): "15h. Tu as bu 4 cafes et 0 eau."
+3. Contraste Avant/Apres: "A gauche ce que tu utilises. A droite ce que ta peau merite."
+4. Loss Aversion / Cout cache: "Ta bouteille plastique met 450 ans a disparaitre."
+5. Social Proof: "4 millions d'hommes ont lache leur gel douche."
+6. Question Hook: "Retourne ton gel douche. Tu comprends quelque chose?"
+7. Revelation / Education: "43 ingredients dans ton gel douche. Tu en connais zero."
+8. Urgence / Rarete: "Derniere chance — edition limitee."
+9. Resultat specifique: "Son corps change. Son deodorant devrait suivre."
+10. Identite / Appartenance: "En soiree, personne ne sait que c'est de l'eau."
+11. Objection Buster: "Pas besoin d'alcool pour avoir de la gueule a table."
+12. Provocation / Defi: "Tu tracks tes macros mais tu bois de la Cristaline."
+13. Disruption / Reverse Psychology: "Ton gel douche fait son job. C'est juste qu'il ne fait QUE ca."
 
 ## COPY REQUIREMENTS (Phase 5+ — FRANCAIS OBLIGATOIRE)
 
 === HEADLINE (obligatoire) ===
 - FRANCAIS uniquement
-- Entre 2 et 15 mots (ideal: 3-8 mots)
-- Maximum 2-3 lignes visuellement
-- DOIT etre IMPACTANT, direct, memorable
-- Si persona_language_profile fourni, utiliser les trigger words
-- Lie au marketing_lever choisi
-
-EXEMPLES DE HEADLINES IMPACTANTS:
-- "Fini les nuits blanches" (4 mots, probleme resolu)
-- "Et si vous osiez enfin?" (5 mots, question provocatrice)
-- "Le secret des pros" (4 mots, exclusivite)
-- "Votre peau vous dit merci" (5 mots, benefice emotionnel)
-- "Pourquoi ils l'adorent tous" (5 mots, social proof)
-- "Ce que personne ne vous dit" (6 mots, curiosite)
-
-EVITER:
-- Headlines generiques ou plats
-- Plus de 15 mots
-- Anglicismes non necessaires
+- Budget: 10-15 mots max, 1-2 lignes visuellement
+- Job: Arreter le scroll en 1 seconde, faire RESSENTIR (feel test de Makepeace)
+- DOIT nommer le probleme, la situation, ou le desir EXPLICITEMENT
+- Specifique a CE persona — si le copy peut s'appliquer a n'importe qui, il ne parle a personne
+- Se suffit a elle-meme sans contexte ni visuel
 
 === SUBTITLE (optionnel) ===
 - FRANCAIS uniquement
-- Entre 5 et 25 mots
-- Developpe/enrichit le headline si necessaire
-- Ajoute contexte ou preuve
+- Budget: 15-25 mots max
+- Job: Repondre aux questions: c'est quoi? Pour qui? Fait avec quoi? Ca fait quoi?
+- Minimum: dire ce qu'est le produit + un benefice concret
+- DOIT REPONDRE au hook de la headline (meme theme, meme champ lexical)
 
 === CTA (obligatoire) ===
 - FRANCAIS uniquement
-- 2-5 mots
+- 2-5 mots — action concrete, PAS un slogan
 - JAMAIS "Acheter maintenant", "Cliquez ici", "En savoir plus"
-- Doit creer urgence ou curiosite
+- JAMAIS de CTA-slogan ("Sois celle qui a compris", "Embrasse le changement")
+- BON: "Je veux essayer", "Voir le resultat", "C'est pour moi", "Decouvrir le secret"
 
-EXEMPLES DE CTA ORIGINAUX:
-- "Je veux essayer" (3 mots, engagement personnel)
-- "Voir le resultat" (3 mots, curiosite)
-- "C'est pour moi" (3 mots, identification)
-- "Decouvrir le secret" (3 mots, mystere)
-- "Oui, je me lance" (4 mots, decision)
+=== BUDGET TOTAL ===
+- headline + sous-texte + CTA = 20-35 mots MAXIMUM
+- Si au-dessus de 35 mots → couper ou changer de concept
+- La clarte ne se sacrifie JAMAIS pour la concision
 
-${formatTaxonomyForPrompt()}
+## FORMULATIONS INTERDITES
+
+- Formulations poetiques/abstraites: "Le rituel naturel qui lui donne l'assurance qu'il merite"
+- Copy qui necessite une deduction du prospect
+- Copy generique applicable a n'importe quel produit
+- Sous-texte deconnecte du hook (le sous-texte REPOND a la headline)
+- Mots dilutifs: peut, pourrait, devrait, a le potentiel de, cherche a
+- Tirets longs (—) dans le copy — utiliser point ou virgule
+- Utilisation mecanique des arguments (note Yuka, etoiles dans CHAQUE ad)
+
+${formatTaxonomyCompactForPrompt()}
 
 ${formatPolicyForPrompt(policy)}
 
@@ -264,6 +294,7 @@ ${context.brief_summary ? `Brief: ${context.brief_summary}` : ""}
 ${context.brand_combat ? `Combat/Ennemi: ${context.brand_combat}` : ""}
 ${context.brand_values?.length ? `Valeurs: ${context.brand_values.map(v => `${v.name} (${v.signification})`).join(", ")}` : ""}
 ${context.red_lines?.length ? `\n⛔ RED LINES (INTERDITS ABSOLUS — NE JAMAIS VIOLER):\n${context.red_lines.map(r => `- ${r}`).join("\n")}` : ""}
+${daFingerprint ? `\n${formatDAFingerprintForPrompt(daFingerprint)}` : ""}
 ${context.angle_epic_type ? `\n=== ANGLE MARKETING SELECTIONNE (EPIC: ${context.angle_epic_type.toUpperCase()}) ===
 Core Benefit: ${context.angle_core_benefit || ""}
 Terrain: ${context.angle_terrain || ""}
@@ -274,10 +305,12 @@ Images produit: ${hasProductImages ? "OUI — photos du vrai packaging disponibl
 
 === METHODOLOGIE ===
 ${(() => {
-  const k = getKnowledgeForStage("planner", awareness);
+  const skeletonFormats = skeletons.map(s => s.format_family);
+  const k = getKnowledgeForStage("planner", awareness, skeletonFormats);
   return [k.methodology, k.visual_rules, k.tactics].filter(Boolean).join("\n\n");
 })()}
 
+${memory && memory.totalAds > 0 ? `\n${formatCreativeMemoryDirective(memory)}\n` : ""}
 === SQUELETTES STRATEGIQUES PRE-ASSIGNES ===
 ${skeletonDescription}
 

@@ -17,20 +17,28 @@ import type {
   SelectedReference,
 } from "./types";
 import { filterContext } from "./context-filter";
-import { lockBatch } from "./batch-locker";
+// lockBatch is now merged into filterContext (P2 optimization)
+// import { lockBatch } from "./batch-locker";
 import { planConcepts } from "./creative-planner";
 import { critiqueConcepts } from "./creative-critic";
 import { conceptsToBriefs } from "./concept-adapter";
 import { inferBrandPolicy } from "./brand-style-policy";
+import { analyzeBrandDA, enrichPolicyWithDA, formatDAFingerprintForPrompt } from "./brand-da-analyzer";
+import type { BrandDAFingerprint } from "./brand-da-analyzer";
 import { directAdBatchV3, adDirectorToArtDirection } from "./art-director";
-import { buildPromptBatchV3 } from "./prompt-builder";
-import { selectReferencesBatch } from "./reference-selector";
+import { buildPromptBatchV3, buildAdFocusedPromptBatch, adjustPromptAfterGateFailure } from "./prompt-builder";
+import { selectReferencesBatch, selectReferencesBatchV4, loadBrandStyleImages } from "./reference-selector";
+import { getLayoutInspirationImage } from "../db/queries/layouts";
+import type { LayoutFamily } from "../db/schema";
 import { renderBatch } from "./renderer";
 import { renderGateBatch } from "./quality-gate";
 import { compositionGate } from "./quality-gate";
 import { composeAd, deriveCopyAssetsV3 } from "./composer";
+import { polishCopyBatch } from "./copy-editor";
 import { dualEvaluateBatch } from "./dual-evaluator";
 import { buildGraphicAd, generateBatchConfigs } from "./graphic-engine";
+import { getRecentCreativePatterns } from "../db/queries/creative-memory";
+import type { CreativeMemory } from "../db/queries/creative-memory";
 import fs from "fs";
 import path from "path";
 
@@ -74,33 +82,59 @@ export interface PipelineResult {
   composedAds: ComposedAd[];
   compositionGateVerdicts: GateVerdict[];
   evaluation: DualBatchEvaluation;
+  retriedIndices: number[];
+  daFingerprint?: BrandDAFingerprint;
 }
 
 export async function runPipeline(config: PipelineConfig): Promise<PipelineResult> {
   const { input, onEvent } = config;
   const hasProductImages = !!(input.product?.imagePaths?.length);
 
-  // ─── LAYER A: Context Filter ───────────────────────────────
-  onEvent({ type: "phase", phase: "A", message: "Filtrage du contexte stratégique..." });
+  // ─── LAYER A+J: Context Filter + Batch Locker (merged) ─────
+  onEvent({ type: "phase", phase: "A", message: "Filtrage du contexte stratégique + verrouillage batch..." });
 
-  const context = await filterContext(input);
+  const { context, lock } = await filterContext(input);
   onEvent({ type: "context_filtered", context });
+  onEvent({ type: "batch_locked", lock });
 
   // ─── Infer brand policy from context ────────────────────────
-  const brandPolicy = inferBrandPolicy(context);
+  let brandPolicy = inferBrandPolicy(context);
   console.log(`[Pipeline] Brand policy: "${brandPolicy.brand_name}" (max stretch: ${brandPolicy.max_stretch_per_batch})`);
 
-  // ─── LAYER J: Batch Locker ─────────────────────────────────
-  onEvent({ type: "phase", phase: "J", message: "Verrouillage stratégique du batch..." });
+  // ─── Brand DA Analysis (Vision on brand style images) ──────
+  let daFingerprint: BrandDAFingerprint | undefined;
+  if (input.brandStyleImagePaths?.length) {
+    try {
+      onEvent({ type: "phase", phase: "A2", message: "Analyse DA marque (Vision)..." });
+      const styleImages = loadBrandStyleImages(input.brandStyleImagePaths);
+      if (styleImages.length > 0) {
+        daFingerprint = await analyzeBrandDA(styleImages, context.brand_name);
+        // Enrich policy with observed DA
+        brandPolicy = enrichPolicyWithDA(brandPolicy, daFingerprint);
+        console.log(`[Pipeline] Brand DA enriched — personality: "${daFingerprint.visual_personality}", confidence: ${daFingerprint.confidence}`);
+      }
+    } catch (err) {
+      console.warn("[Pipeline] Brand DA analysis failed, continuing with inferred policy:", err);
+    }
+  }
 
-  const lock = await lockBatch(context, input.count);
-  onEvent({ type: "batch_locked", lock });
+  // ─── P3: Creative Memory (inter-batch diversification) ─────
+  let creativeMemory: CreativeMemory | undefined;
+  const brandId = input.brand.name; // Use brand name as fallback ID
+  try {
+    creativeMemory = await getRecentCreativePatterns(brandId);
+    if (creativeMemory.totalAds > 0) {
+      console.log(`[Pipeline] Creative memory: ${creativeMemory.totalAds} recent ads found for "${brandId}"`);
+    }
+  } catch {
+    console.warn("[Pipeline] Creative memory query failed, continuing without");
+  }
 
   // ─── LAYER B: Concept Planner (v3) ────────────────────────
   // Over-generates count×2 concepts with closed taxonomies.
   onEvent({ type: "phase", phase: "B", message: `Génération de ${input.count * 2} concepts (sur-génération pour filtrage)...` });
 
-  const allConcepts = await planConcepts(context, input.count, brandPolicy, lock, hasProductImages);
+  const allConcepts = await planConcepts(context, input.count, brandPolicy, lock, hasProductImages, creativeMemory, daFingerprint);
   onEvent({ type: "concepts_generated", concepts: allConcepts });
 
   // ─── LAYER B2: Creative Critic ────────────────────────────
@@ -124,7 +158,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
   // ─── LAYER C: Ad Director (v3 — AdDirectorSpec) ────────────
   onEvent({ type: "phase", phase: "C", message: "Direction artistique v3 par concept..." });
 
-  const adDirections = await directAdBatchV3(keptConcepts, context, hasProductImages);
+  const daDirective = daFingerprint ? formatDAFingerprintForPrompt(daFingerprint) : undefined;
+  const adDirections = await directAdBatchV3(keptConcepts, context, hasProductImages, daDirective);
 
   // Adapt to ArtDirection for downstream renderer compat
   const artDirections = adDirections.map(adDirectorToArtDirection);
@@ -227,24 +262,49 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     const geminiArtDirs = geminiIndices.map((i) => artDirections[i]);
     const geminiBriefs = geminiIndices.map((i) => briefs[i]);
 
-    // Select references using v2 ArtDirection adapter (reference-selector expects ArtDirection)
-    // Pass additional user-uploaded reference images if available
-    let geminiRefs: SelectedReference[][];
-    geminiRefs = selectReferencesBatch(
-      geminiArtDirs,
-      input.product?.imagePaths,
-      undefined, // inspirationPaths
-      input.additionalReferenceImages,
+    // ─── Phase 5+: Load layout inspirations and brand style ────
+    const brandId = input.brand.name; // Use brand name as fallback ID
+    const layoutFamilies = geminiConcepts.map((c) => c.layout_family as LayoutFamily);
+
+    // Load layout inspiration images for each concept
+    const layoutInspirations: (Buffer | undefined)[] = [];
+    for (const layoutFamily of layoutFamilies) {
+      try {
+        const layoutBuffer = await getLayoutInspirationImage(layoutFamily, brandId);
+        layoutInspirations.push(layoutBuffer || undefined);
+      } catch {
+        layoutInspirations.push(undefined);
+      }
+    }
+
+    // Load brand style images if available
+    const brandStyleImages = input.brandStyleImagePaths?.length
+      ? loadBrandStyleImages(input.brandStyleImagePaths)
+      : undefined;
+
+    // Select references using V4 (with layout inspiration support)
+    const geminiRefs = await selectReferencesBatchV4(
+      geminiArtDirs.map((dir, i) => ({
+        direction: dir,
+        productImagePaths: input.product?.imagePaths,
+        additionalImages: input.additionalReferenceImages,
+        layoutFamily: layoutFamilies[i],
+        brandId,
+        brandStyleImagePaths: input.brandStyleImagePaths,
+      }))
     );
 
-    // Build prompts using v3 path
-    const geminiPrompts = buildPromptBatchV3(
-      geminiConcepts,
-      geminiAdDirs,
+    // ─── Phase 5+: Build prompts using AD-FOCUSED builder ────
+    const geminiPrompts = buildAdFocusedPromptBatch({
+      concepts: geminiConcepts,
+      directions: geminiAdDirs,
       context,
-      geminiRefs,
-      input.aspectRatio,
-    );
+      referencesByIndex: geminiRefs,
+      aspectRatio: input.aspectRatio,
+      layoutFamilies,
+      layoutInspirations,
+      brandStyleImages,
+    });
 
     geminiPrompts.forEach((p, gi) => {
       onEvent({ type: "prompt_built", index: geminiIndices[gi], prompt_preview: p.prompt_for_model.slice(0, 200) });
@@ -296,6 +356,90 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       console.log(`[Pipeline] Concept ${i + 1}: falling back to pass 1`);
     }
   });
+
+  // ─── P1: FEEDBACK LOOP — Retry rejected/high-risk renders ───
+  const retriedIndices: number[] = [];
+  const maxRetries = Math.ceil(input.count / 2);
+  let retryCount = 0;
+
+  for (let i = 0; i < renders.length && retryCount < maxRetries; i++) {
+    const verdict = renderGateVerdicts[i];
+    if (verdict.action !== "reject" && verdict.action !== "mark_high_risk") continue;
+    // Only retry Gemini renders (graphic renders are deterministic)
+    if (renders[i].base_image.prompt_used === "[design_led — programmatic, no AI]") continue;
+
+    retryCount++;
+    onEvent({ type: "phase", phase: "H1-retry", message: `Retry render ${i + 1} (${verdict.action})...` });
+    console.log(`[Pipeline] Retrying render ${i + 1} — verdict was "${verdict.action}"`);
+
+    try {
+      // Adjust prompt based on gate failure scores
+      const originalPrompt = prompts[i];
+      const adjustedPrompt = adjustPromptAfterGateFailure(originalPrompt, verdict);
+
+      // Re-render with adjusted prompt (single attempt)
+      const retryRenders = await renderBatch(
+        [adjustedPrompt],
+        [briefs[i]],
+        (_gi, success) => onEvent({ type: "render_pass_1", index: i, success }),
+        (_gi, success) => onEvent({ type: "render_pass_2", index: i, success })
+      );
+
+      if (retryRenders.length > 0) {
+        const retryRender = retryRenders[0];
+        retryRender.concept_index = renders[i].concept_index;
+        retryRender.art_direction = renders[i].art_direction;
+
+        // Re-gate the retry
+        const retryVerdict = await renderGateBatch([retryRender]);
+        const newVerdict = retryVerdict[0];
+        onEvent({ type: "render_gate", index: i, verdict: newVerdict });
+
+        // Replace if the retry is better (accept or at least not reject)
+        if (newVerdict.action === "accept" ||
+            (newVerdict.action === "mark_high_risk" && verdict.action === "reject")) {
+          renders[i] = retryRender;
+          renderGateVerdicts[i] = newVerdict;
+          prompts[i] = adjustedPrompt;
+          retriedIndices.push(i);
+          console.log(`[Pipeline] Retry ${i + 1} succeeded — new verdict: "${newVerdict.action}"`);
+        } else {
+          console.log(`[Pipeline] Retry ${i + 1} did not improve — keeping original`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Pipeline] Retry failed for concept ${i + 1}:`, err);
+    }
+  }
+
+  if (retriedIndices.length > 0) {
+    console.log(`[Pipeline] Retried ${retriedIndices.length} renders: indices [${retriedIndices.join(", ")}]`);
+  }
+
+  // ─── STAGE F: Copy Editor (polish headlines/CTAs) ───────────
+  onEvent({ type: "phase", phase: "F", message: "Polish du copy (headlines, CTAs)..." });
+
+  const polishedCopies = await polishCopyBatch(keptConcepts, context);
+
+  // Apply polished copy back to allCopyAssets
+  polishedCopies.forEach((polished, i) => {
+    if (allCopyAssets[i]) {
+      allCopyAssets[i].copyAssets.headline = polished.headline;
+      allCopyAssets[i].copyAssets.cta = polished.cta;
+      if (polished.subtitle) {
+        allCopyAssets[i].copyAssets.subtitle = polished.subtitle;
+      }
+      if (polished.proof) {
+        allCopyAssets[i].copyAssets.proof = polished.proof;
+      }
+    }
+  });
+
+  console.log("[Pipeline] Copy polished:", polishedCopies.map((p, i) => ({
+    concept: i + 1,
+    headline: p.headline,
+    cta: p.cta,
+  })));
 
   // ─── LAYER G: Composer (v3 — taxonomy-driven layout) ────────
   const composedAds: ComposedAd[] = [];
@@ -378,6 +522,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     composedAds,
     compositionGateVerdicts,
     evaluation,
+    retriedIndices,
+    daFingerprint,
   };
 }
 

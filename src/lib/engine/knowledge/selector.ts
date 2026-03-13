@@ -7,23 +7,32 @@ import { getPsychologyDirective } from "./psychology";
 import { getTacticsDirective } from "./advanced-tactics";
 import { TEXT_ON_IMAGE_RULES, CAPTION_HEADLINES } from "./headlines";
 
+// ─── NEW: Enriched knowledge from PDFs ─────────────────────
+import { getPatternsForAwarenessDirective, getPatternDirective, COMBINATORICS_REMINDER } from "./patterns-library";
+import { getLayoutCategorySummary, getLayoutsForFormats } from "./layouts-library";
+import { getCopywritingFrameworkDirective, getAllHeadlineMechanismsDirective } from "./copywriting-framework";
+import { getContentBriefDirective } from "./content-brief-rules";
+
 // ============================================================
-// KNOWLEDGE SELECTOR
+// KNOWLEDGE SELECTOR (v2 — Enriched with PDF knowledge base)
 // Context-aware filtering of global methodology knowledge.
 // Returns the right knowledge slice for each pipeline stage.
+// Each stage gets ONLY what it needs (~3-5K chars, not 195K).
 // ============================================================
 
 /**
  * Get knowledge for a specific pipeline stage and awareness level.
  * Each stage gets a tailored subset of methodology knowledge.
+ * @param formatFamilies Optional format families for layout filtering (planner only)
  */
 export function getKnowledgeForStage(
   stage: PipelineStage,
-  awareness: AwarenessLevel
+  awareness: AwarenessLevel,
+  formatFamilies?: string[],
 ): StageKnowledge {
   switch (stage) {
     case "planner":
-      return getPlannerKnowledge(awareness);
+      return getPlannerKnowledge(awareness, formatFamilies);
     case "art_director":
       return getArtDirectorKnowledge(awareness);
     case "prompt_builder":
@@ -39,50 +48,83 @@ export function getKnowledgeForStage(
   }
 }
 
-// ─── PLANNER (Layer B) ───────────────────────────────────────
-// Needs: Schwartz strategy, psychology, visual concept options
-
-function getPlannerKnowledge(awareness: AwarenessLevel): StageKnowledge {
+/**
+ * Get enriched knowledge for a specific pattern choice.
+ * Called AFTER the planner selects a pattern, to give downstream stages
+ * detailed pattern-specific knowledge.
+ */
+export function getKnowledgeForPattern(
+  patternId: string,
+  awareness: AwarenessLevel
+): StageKnowledge {
   return {
-    methodology: getSchwartzDirective(awareness),
-    visual_rules: getVisualConceptDirective(awareness),
-    copy_rules: getCopywritingDirective(),
+    methodology: getPatternDirective(patternId),
+    visual_rules: getContentBriefDirective("art_director"),
+    copy_rules: getCopywritingFrameworkDirective("composer"),
     tactics: getTacticsDirective(awareness),
   };
 }
 
+// ─── PLANNER (Layer B) ───────────────────────────────────────
+// Gets: Schwartz strategy + patterns for awareness + layouts + copywriting principles
+// This is the MOST knowledge-heavy stage.
+
+function getPlannerKnowledge(awareness: AwarenessLevel, formatFamilies?: string[]): StageKnowledge {
+  // P5 optimization: use filtered layouts if format families are known
+  const layoutDirective = formatFamilies && formatFamilies.length > 0
+    ? getLayoutsForFormats(formatFamilies)
+    : getLayoutCategorySummary();
+
+  // P5: use compact tactics (first line only as summary)
+  const fullTactics = getTacticsDirective(awareness);
+  const compactTactics = fullTactics.split("\n").slice(0, 8).join("\n");
+
+  return {
+    methodology: `${getSchwartzDirective(awareness)}
+
+${getPatternsForAwarenessDirective(awareness)}
+
+${COMBINATORICS_REMINDER}`,
+    visual_rules: `${getVisualConceptDirective(awareness)}
+
+${layoutDirective}
+
+${getContentBriefDirective("planner")}`,
+    copy_rules: `${getCopywritingFrameworkDirective("planner")}`,
+    tactics: compactTactics,
+  };
+}
+
 // ─── ART DIRECTOR (Layer C) ────────────────────────────────
-// Needs: Neuro-design rules, visual concepts, psychology (mood)
+// Gets: Neuro-design + visual psychology + content brief rules + anti-AI
 
 function getArtDirectorKnowledge(awareness: AwarenessLevel): StageKnowledge {
   return {
     methodology: getPsychologyDirective(awareness),
-    visual_rules: `${getNeuroDesignDirective()}\n\n${getVisualConceptDirective(awareness)}`,
-    copy_rules: "", // Art director doesn't write copy
+    visual_rules: `${getNeuroDesignDirective()}
+
+${getContentBriefDirective("art_director")}
+
+${getVisualConceptDirective(awareness)}`,
+    copy_rules: "",
     tactics: getTacticsDirective(awareness),
   };
 }
 
 // ─── PROMPT BUILDER (Layer D) ──────────────────────────────
-// Needs: Neuro-design (compact), visual hygiene. BUDGET ~200 chars extra.
+// Gets: Content brief anatomy + anti-AI rules (compact)
 
 function getPromptBuilderKnowledge(awareness: AwarenessLevel): StageKnowledge {
-  // Prompt builder has strict char budget, so we give minimal directives
   return {
     methodology: "",
-    visual_rules: `NEURO-DESIGN COMPACT:
-- Point focal unique, Z-pattern, max 3-4 elements
-- Espace blanc genereux autour du sujet
-- Regard humain vers le produit (gaze cueing)
-- Clean composition, uncluttered background, focus on subject
-- Visible skin pores, natural skin texture si humains presents`,
+    visual_rules: getContentBriefDirective("prompt_builder"),
     copy_rules: "",
     tactics: "",
   };
 }
 
 // ─── COMPOSER (Layer G) ─────────────────────────────────────
-// Needs: Headline templates, copywriting rules, typography hierarchy
+// Gets: Full copywriting framework + headline mechanisms + templates
 
 function getComposerKnowledge(awareness: AwarenessLevel): StageKnowledge {
   const funnelStage = awarenessToFunnel(awareness);
@@ -95,7 +137,10 @@ function getComposerKnowledge(awareness: AwarenessLevel): StageKnowledge {
 - Sub-headline: taille MOYENNE
 - CTA: couleur d'accent, contraste fort
 - ${TEXT_ON_IMAGE_RULES.contrast}`,
-    copy_rules: `${getCopywritingDirective()}
+    copy_rules: `${getCopywritingFrameworkDirective("composer")}
+
+13 MECANISMES DE HEADLINE:
+${getAllHeadlineMechanismsDirective()}
 
 TEMPLATES HEADLINE (${funnelStage.toUpperCase()}):
 - ${headlines}`,
@@ -104,7 +149,7 @@ TEMPLATES HEADLINE (${funnelStage.toUpperCase()}):
 }
 
 // ─── EVALUATOR (Layer K) ────────────────────────────────────
-// Needs: Schwartz criteria, neuro-design checklist, psychology
+// Gets: Full evaluation checklists from enriched framework
 
 function getEvaluatorKnowledge(awareness: AwarenessLevel): StageKnowledge {
   return {
@@ -117,30 +162,18 @@ function getEvaluatorKnowledge(awareness: AwarenessLevel): StageKnowledge {
 - Regard humain dirige vers produit/CTA?
 - Lisible en 0.3s sur mobile?
 - L'image seule (sans texte) communique-t-elle la promesse?`,
-    copy_rules: `CRITERES COPY:
-- Max ${TEXT_ON_IMAGE_RULES.maxHeadlineWords} mots pour headline sur image
-- Mots puissants utilises (Gratuit, Nouveau, Garanti)?
-- Ton conversationnel (pas corporate)?
-- Specifique (pas generique)?`,
+    copy_rules: getCopywritingFrameworkDirective("evaluator"),
     tactics: getPsychologyDirective(awareness),
   };
 }
 
 // ─── QUALITY GATE (Layer H) ─────────────────────────────────
-// Needs: Neuro-design checklist, visual hygiene
+// Gets: Full quality checklist from enriched content brief rules
 
 function getQualityGateKnowledge(awareness: AwarenessLevel): StageKnowledge {
   return {
     methodology: "",
-    visual_rules: `CHECKLIST QUALITE NEURO-DESIGN:
-- Composition propre (clean composition)?
-- Arriere-plan non encombre (uncluttered background)?
-- Focus sur le sujet principal?
-- Anti-plastique: pores visibles, texture peau naturelle si humains?
-- Pas de texte genere par l'IA dans l'image?
-- Coherence avatar: le visuel correspond-il a la cible?
-- Methode Disney: formes fluides, pas agressives (sauf si voulu)?
-- Fluidite perceptuelle: lisible en 0.3s?`,
+    visual_rules: getContentBriefDirective("quality_gate"),
     copy_rules: "",
     tactics: "",
   };

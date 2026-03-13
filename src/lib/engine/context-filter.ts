@@ -1,26 +1,35 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { RawPipelineInput, FilteredContext } from "./types";
+import type { RawPipelineInput, FilteredContext, BatchLockConfig } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
 
 // ============================================================
-// LAYER A: CONTEXT FILTER
+// LAYER A+J: CONTEXT FILTER + BATCH LOCKER (merged)
 // Reduces raw brand/product/persona data to what matters for ONE ad.
 // Extracts audience tension, promise, proof, emotional angle.
+// Also derives the batch strategic lock (campaign thesis, promise, proof).
+// Saves 1 Claude call (~4s latency) vs. separate batch-locker.
 // ============================================================
 
 const getClient = () => new Anthropic();
 
-export async function filterContext(input: RawPipelineInput): Promise<FilteredContext> {
+export interface FilterContextResult {
+  context: FilteredContext;
+  lock: BatchLockConfig;
+}
+
+export async function filterContext(input: RawPipelineInput): Promise<FilterContextResult> {
   const client = getClient();
 
   const rawContext = buildRawContextDump(input);
 
   const response = await callClaudeWithRetry(() => client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 2048,
+    max_tokens: 2300,
     system: `Tu es un strategiste publicitaire senior. Ta mission : extraire d'un contexte brut les SEULS elements qui comptent pour creer une publicite performante sur Meta (Facebook/Instagram).
 
 Ne garde que l'essentiel. Pas de blabla. Chaque champ doit etre actionnable pour un directeur creatif.
+
+Definis aussi le socle strategique commun pour le batch : une these de campagne, une promesse pub formulee, et la preuve la plus forte formulee visuellement. Tous les visuels du batch partageront ce socle — seuls l'archetype visuel, le hook, la composition et l'ambiance varient.
 
 Reponds UNIQUEMENT en JSON valide, sans texte avant ou apres.`,
     messages: [
@@ -53,7 +62,11 @@ ${rawContext}
   "brand_name": "Nom de la marque",
   "red_lines": ["INTERDIT ABSOLU 1 (ex: ne jamais mentionner les concurrents)", "INTERDIT 2"],
   "brand_combat": "Ce contre quoi la marque lutte (ennemi/combat) si mentionne, sinon null",
-  "brand_values": [{"name": "Valeur", "signification": "Ce que ca signifie"}]
+  "brand_values": [{"name": "Valeur", "signification": "Ce que ca signifie"}],
+
+  "campaignThesis": "La these de campagne en 1 phrase (ex: 'Le cafe premium ne devrait pas detruire la planete')",
+  "lockedPromise": "La promesse unique, formulee pour la pub (ex: 'Un espresso parfait, zero dechet')",
+  "lockedProof": "La preuve la plus forte, formulee visuellement (ex: 'Capsule inox reutilisable 10 000 fois')"
 }`,
       },
     ],
@@ -170,6 +183,20 @@ ${rawContext}
       }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // Extract BatchLockConfig from the merged response
+    // ═══════════════════════════════════════════════════════════
+    const lock: BatchLockConfig = {
+      campaignThesis: (parsed as any).campaignThesis || `${parsed.brand_name} — ${parsed.promise}`,
+      lockedPromise: (parsed as any).lockedPromise || parsed.promise,
+      lockedProof: (parsed as any).lockedProof || parsed.proof,
+    };
+
+    // Clean the lock fields from context (they belong to BatchLockConfig)
+    delete (parsed as any).campaignThesis;
+    delete (parsed as any).lockedPromise;
+    delete (parsed as any).lockedProof;
+
     console.log("[ContextFilter] Filtered context:", {
       tension: parsed.audience_tension,
       promise: parsed.promise,
@@ -181,7 +208,12 @@ ${rawContext}
       hasAngle: !!parsed.angle_epic_type,
       hasRichPersona: !!parsed.persona_desires,
     });
-    return parsed;
+    console.log("[ContextFilter] Batch lock (merged):", {
+      thesis: lock.campaignThesis.slice(0, 60),
+      promise: lock.lockedPromise.slice(0, 60),
+      proof: lock.lockedProof.slice(0, 60),
+    });
+    return { context: parsed, lock };
   } catch (e) {
     console.error("[ContextFilter] JSON parse error:", jsonStr.slice(0, 200));
     throw new Error(`Context filter: JSON invalide — ${(e as Error).message}`);

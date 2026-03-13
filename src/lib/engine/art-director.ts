@@ -94,7 +94,8 @@ const getClient = () => new Anthropic();
 export async function directAd(
   concept: ConceptSpec,
   context: FilteredContext,
-  hasProductImages: boolean
+  hasProductImages: boolean,
+  daDirective?: string,
 ): Promise<AdDirectorSpec> {
   const client = getClient();
 
@@ -188,6 +189,7 @@ Couleur accent: ${context.brand_visual_code.accent_color}
 Style typo: ${context.brand_visual_code.font_style}
 Ton visuel: ${context.brand_visual_code.visual_tone}
 
+${daDirective ? `\n${daDirective}\n` : ""}
 === CONTRAINTES ===
 ${context.constraints.join("\n") || "Aucune contrainte specifique"}
 Format: ${context.format_goal}
@@ -522,11 +524,12 @@ export function adDirectorToArtDirection(spec: AdDirectorSpec): ArtDirection {
 export async function directAdBatchV3(
   concepts: ConceptSpec[],
   context: FilteredContext,
-  hasProductImages: boolean
+  hasProductImages: boolean,
+  daDirective?: string,
 ): Promise<AdDirectorSpec[]> {
   const directions: AdDirectorSpec[] = [];
   for (let i = 0; i < concepts.length; i++) {
-    const direction = await directAd(concepts[i], context, hasProductImages);
+    const direction = await directAd(concepts[i], context, hasProductImages, daDirective);
     directions.push(direction);
     if (i < concepts.length - 1) {
       await new Promise((r) => setTimeout(r, 1000));

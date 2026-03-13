@@ -366,3 +366,23 @@ ${HUMAN_PRESENCES.map((h) => `  - "${h}"`).join("\n")}
 MARKETING_LEVER (secondaire) :
 ${MARKETING_LEVERS.map((l) => `  - "${l}"`).join("\n")}`;
 }
+
+/**
+ * P5 optimization: Compact taxonomy for planner prompt.
+ * Omits ad_job, marketing_lever, format_family (already fixed by skeletons).
+ * Only lists values the planner still needs to choose.
+ * Reduces prompt by ~30%.
+ */
+export function formatTaxonomyCompactForPrompt(): string {
+  return `=== TAXONOMIES FERMÉES (tu DOIS choisir dans ces listes) ===
+(ad_job, marketing_lever, format_family sont PRE-ASSIGNES dans les squelettes — ne pas changer.)
+
+LAYOUT_FAMILY: ${LAYOUT_FAMILIES.map((l) => `"${l}"`).join(" | ")}
+PROOF_MECHANISM: ${PROOF_MECHANISMS.map((p) => `"${p}"`).join(" | ")}
+RUPTURE_STRUCTURE: ${RUPTURE_STRUCTURES.map((r) => `"${r}"`).join(" | ")}
+GRAPHIC_TENSION: ${GRAPHIC_TENSIONS.map((g) => `"${g}"`).join(" | ")}
+RENDER_FAMILY: ${RENDER_FAMILIES.map((r) => `"${r}"`).join(" | ")}
+VISUAL_STYLE: ${VISUAL_STYLES.map((s) => `"${s}"`).join(" | ")}
+STYLE_MODE: ${STYLE_MODES.map((m) => `"${m}"`).join(" | ")}
+HUMAN_PRESENCE: ${HUMAN_PRESENCES.map((h) => `"${h}"`).join(" | ")}`;
+}

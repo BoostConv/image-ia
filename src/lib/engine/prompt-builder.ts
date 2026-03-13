@@ -9,6 +9,7 @@ import type {
   ImageGenerationConfig,
   CopyAssets,
   AdPromptStructure,
+  GateVerdict,
 } from "./types";
 import type { LayoutFamily } from "../db/schema";
 
@@ -111,7 +112,7 @@ export function buildPromptV3(
 // - REFERENCE STRATEGY (layout inspiration, brand style)
 // ============================================================
 
-const MAX_AD_FOCUSED_LENGTH = 1200;
+const MAX_AD_FOCUSED_LENGTH = 2500; // Increased for full structured prompt
 
 export interface AdFocusedPromptInput {
   concept: ConceptSpec;
@@ -289,28 +290,52 @@ function formatLayoutFamily(family: LayoutFamily): string {
 
 /**
  * Extract "from" part of belief shift.
+ * Handles both French (DE...VERS) and English (FROM...TO) formats.
  */
 function extractBeliefFrom(beliefShift: string): string {
-  const match = beliefShift.match(/FROM\s*["""]?(.+?)["""]?\s*→/i);
-  if (match) return match[1].trim();
+  // Try French format: DE '...' → VERS
+  const frenchMatch = beliefShift.match(/DE\s*['""]?(.+?)['""]?\s*→/i);
+  if (frenchMatch) {
+    return frenchMatch[1].trim().replace(/^['""']|['""']$/g, "");
+  }
 
-  // Try splitting by →
+  // Try English format: FROM '...' → TO
+  const englishMatch = beliefShift.match(/FROM\s*['""]?(.+?)['""]?\s*→/i);
+  if (englishMatch) {
+    return englishMatch[1].trim().replace(/^['""']|['""']$/g, "");
+  }
+
+  // Fallback: split by →
   const parts = beliefShift.split("→");
-  if (parts.length >= 2) return parts[0].replace(/FROM/i, "").trim();
+  if (parts.length >= 2) {
+    return parts[0].replace(/^(DE|FROM)\s*/i, "").trim().replace(/^['""']|['""']$/g, "");
+  }
 
   return "une croyance limitante";
 }
 
 /**
  * Extract "to" part of belief shift.
+ * Handles both French (DE...VERS) and English (FROM...TO) formats.
  */
 function extractBeliefTo(beliefShift: string): string {
-  const match = beliefShift.match(/→\s*TO\s*["""]?(.+?)["""]?$/i);
-  if (match) return match[1].trim();
+  // Try French format: → VERS '...'
+  const frenchMatch = beliefShift.match(/→\s*VERS\s*['""]?(.+?)['""]?\s*$/i);
+  if (frenchMatch) {
+    return frenchMatch[1].trim().replace(/^['""']|['""']$/g, "");
+  }
 
-  // Try splitting by →
+  // Try English format: → TO '...'
+  const englishMatch = beliefShift.match(/→\s*TO\s*['""]?(.+?)['""]?\s*$/i);
+  if (englishMatch) {
+    return englishMatch[1].trim().replace(/^['""']|['""']$/g, "");
+  }
+
+  // Fallback: split by →
   const parts = beliefShift.split("→");
-  if (parts.length >= 2) return parts[parts.length - 1].replace(/TO/i, "").trim();
+  if (parts.length >= 2) {
+    return parts[parts.length - 1].replace(/^(VERS|TO)\s*/i, "").trim().replace(/^['""']|['""']$/g, "");
+  }
 
   return beliefShift;
 }
@@ -694,6 +719,63 @@ export function buildAdFocusedPromptBatch(
       brandStyleImages,
     });
   });
+}
+
+// ─── FEEDBACK LOOP: PROMPT ADJUSTMENT AFTER GATE FAILURE ────
+// P1 optimization: when render gate rejects an image, adjust the
+// prompt based on the specific failure scores and retry once.
+
+/**
+ * Adjust a prompt after a render gate failure.
+ * Reads the gate verdict scores and adds targeted negative constraints.
+ */
+export function adjustPromptAfterGateFailure(
+  originalPrompt: BuiltPrompt,
+  verdict: GateVerdict,
+): BuiltPrompt {
+  const scores = verdict.scores;
+  const adjustments: string[] = [];
+
+  // High "pasted" score → add compositing constraints
+  if ((scores.product_looks_pasted ?? 0) > 7) {
+    adjustments.push("Product must appear naturally integrated with coherent shadows and reflections. NOT composited, NOT pasted. Natural contact shadows and ambient occlusion.");
+  } else if ((scores.product_looks_pasted ?? 0) > 5) {
+    adjustments.push("Ensure natural shadows and reflections around product. Avoid any composited look.");
+  }
+
+  // High fidelity risk → add fidelity constraints
+  if ((scores.product_fidelity_risk ?? 0) > 7) {
+    adjustments.push("CRITICAL: Product packaging must be EXACT — same shape, proportions, label, colors. Do NOT distort or modify the product.");
+  } else if ((scores.product_fidelity_risk ?? 0) > 5) {
+    adjustments.push("Preserve exact product proportions, label placement, and packaging shape.");
+  }
+
+  // Low perspective coherence → simplify scene
+  if ((scores.perspective_coherent ?? 10) < 3) {
+    adjustments.push("SIMPLIFY the scene. Use a single consistent camera angle. All elements must share the same vanishing point and perspective. Avoid complex multi-plane compositions.");
+  } else if ((scores.perspective_coherent ?? 10) < 5) {
+    adjustments.push("Ensure consistent perspective across all scene elements. Single vanishing point.");
+  }
+
+  // Low safe zone usability → enlarge safe zone
+  if ((scores.safe_zone_usable ?? 10) < 4) {
+    adjustments.push("ENLARGE the empty space reserved for text overlay. At least 30% of the frame must be clean, uncluttered space suitable for headline placement. Push scene elements away from the text zone.");
+  } else if ((scores.safe_zone_usable ?? 10) < 6) {
+    adjustments.push("Ensure the text overlay zone is clearly empty — no products, props, or busy patterns in that area.");
+  }
+
+  if (adjustments.length === 0) {
+    // Generic improvement if no specific score issue
+    adjustments.push("Improve overall image quality. Ensure natural lighting, coherent perspective, and clear safe zones for text.");
+  }
+
+  const adjustmentSuffix = "\n\n=== RETRY CORRECTIONS ===\n" + adjustments.join("\n");
+
+  return {
+    ...originalPrompt,
+    prompt_for_model: originalPrompt.prompt_for_model + adjustmentSuffix,
+    edit_prompt_round_2: originalPrompt.edit_prompt_round_2,
+  };
 }
 
 // ─── V2 COMPAT (for pipeline backward compat) ──────────────
