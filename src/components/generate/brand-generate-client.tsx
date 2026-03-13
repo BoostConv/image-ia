@@ -322,25 +322,21 @@ export function BrandGenerateClient({
   const handleBatchGenerate = useCallback(async () => {
     // ─── CUSTOM MODE: direct prompts to Gemini ─────────────────
     if (mode === "custom") {
-      const promptLines = customPrompts
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-
-      if (promptLines.length === 0) return;
+      const prompt = customPrompts.trim();
+      if (!prompt) return;
 
       await startGeneration({
         endpoint: "/api/generate-custom",
         body: {
           brandId: brand.id,
-          prompts: promptLines,
+          prompts: [prompt],
           aspectRatio: selectedFormat?.aspectRatio || "1:1",
           format: selectedFormatId,
           globalReferenceImages: customRefImages.map((r) => r.base64),
         },
         brandId: brand.id,
         brandName: brand.name,
-        totalCount: promptLines.length,
+        totalCount: 1,
       });
       return;
     }
@@ -474,17 +470,17 @@ export function BrandGenerateClient({
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-1.5">
                 <Terminal className="h-3.5 w-3.5" />
-                Prompts (1 par ligne)
+                Prompt custom
               </label>
               <Textarea
                 value={customPrompts}
                 onChange={(e) => setCustomPrompts(e.target.value)}
-                placeholder={"Collez vos prompts ici, un par ligne.\n\nExemple:\nA sleek bottle of perfume on a marble surface, golden hour lighting, luxury editorial photography\nMinimalist flat lay of skincare products on white background, soft shadows, clean composition\nDramatic close-up of a watch face reflecting city lights at night, cinematic mood"}
+                placeholder={"Collez votre prompt ici (multi-lignes OK).\n\nExemple:\nA sleek bottle of perfume on a marble surface, golden hour lighting, luxury editorial photography. The bottle should be centered with soft reflections on the marble."}
                 rows={10}
                 className="text-xs font-mono"
               />
               <p className="text-[10px] text-muted-foreground">
-                {customPrompts.split("\n").filter((l) => l.trim()).length} prompt(s) — envoyes directement a Gemini
+                1 prompt — envoye directement a Gemini
               </p>
             </div>
 
@@ -891,7 +887,7 @@ export function BrandGenerateClient({
               <Sparkles className="mr-2 h-4 w-4" />
             )}
             {mode === "custom"
-              ? `Generer ${customPrompts.split("\n").filter((l) => l.trim()).length} image(s)`
+              ? "Generer 1 image"
               : `Generer ${batchCount} ${mode === "ad" ? "ads" : "visuels"}`}
           </Button>
         )}
