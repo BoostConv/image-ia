@@ -21,8 +21,9 @@ import {
 import { compileGuidelinesPrompt } from "@/lib/db/queries/guidelines";
 import { compileDocumentsPrompt, compileInspirationPrompt } from "@/lib/db/queries/documents";
 import { db } from "@/lib/db";
-import { generatedImages } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { generatedImages, marketingAngles } from "@/lib/db/schema";
+import type { MarketingAngleSpec, AnglesPrioritization } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 export const maxDuration = 300;
 
@@ -75,6 +76,54 @@ export async function POST(request: NextRequest) {
       compileDocumentsPrompt(brandId),
       compileInspirationPrompt(brandId),
     ]);
+
+    // ─── Retrieve best marketing angle for this product/persona ───
+    let selectedAngle: MarketingAngleSpec | undefined;
+    if (productId) {
+      try {
+        const anglesRows = await db
+          .select()
+          .from(marketingAngles)
+          .where(eq(marketingAngles.productId, productId))
+          .orderBy(desc(marketingAngles.createdAt))
+          .limit(1);
+
+        if (anglesRows.length > 0 && anglesRows[0].prioritization) {
+          const prioritization = anglesRows[0].prioritization as AnglesPrioritization;
+          const allAngles = prioritization.angles || [];
+          const priorityMatrix = prioritization.priorityMatrix || [];
+
+          if (allAngles.length > 0) {
+            // If persona is selected, prefer angles targeting this persona
+            if (personaId) {
+              const personaAngle = allAngles.find(
+                (a) => a.targetPersonaIds?.includes(personaId)
+              );
+              if (personaAngle) {
+                selectedAngle = personaAngle;
+              }
+            }
+
+            // Fallback: pick the highest priority angle
+            if (!selectedAngle) {
+              const highPriority = priorityMatrix.find((p) => p.priority === "high");
+              if (highPriority) {
+                selectedAngle = allAngles.find((a) => a.id === highPriority.angleId);
+              }
+            }
+
+            // Last fallback: first angle
+            if (!selectedAngle) {
+              selectedAngle = allAngles[0];
+            }
+
+            console.log(`[generate-batch] Using angle: "${selectedAngle.name}" (${selectedAngle.epicType})`);
+          }
+        }
+      } catch (err) {
+        console.warn("[generate-batch] Failed to load marketing angles:", err);
+      }
+    }
 
     const generationId = await createGeneration({
       brandId,
@@ -141,6 +190,8 @@ export async function POST(request: NextRequest) {
       documentsPrompt: documentsPrompt || undefined,
       inspirationPrompt: inspirationPrompt || undefined,
       renderStrategy: renderStrategy as "clean" | "complete_ad",
+      // COUCHE 3 — Marketing Angle (selected from DB)
+      marketingAngle: selectedAngle,
       // Additional reference images uploaded by user (base64 → Buffer)
       additionalReferenceImages: additionalRefImages?.length
         ? additionalRefImages.map((b64: string) => {
