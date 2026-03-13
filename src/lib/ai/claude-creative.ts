@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callClaudeWithRetry } from "./claude-retry";
+import { extractJsonFromResponse } from "./json-parser";
 
 const getClient = () => {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -198,11 +199,7 @@ Le resultat doit etre au niveau des meilleures pubs Instagram/Facebook du marche
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[1];
-  }
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   const parsed = JSON.parse(jsonStr.trim());
   return parsed as CreativePromptResult;
@@ -328,9 +325,7 @@ IMPORTANT :
     throw new Error("Pas de reponse de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as BrandSiteAnalysis;
 }
@@ -400,9 +395,7 @@ Les tags doivent decrire les caracteristiques visuelles cles (ex: "minimaliste",
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as InspirationAnalysis;
 }
@@ -454,9 +447,7 @@ Reponds UNIQUEMENT en JSON valide :
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as DocumentSummary;
 }
@@ -534,9 +525,7 @@ Reponds UNIQUEMENT en JSON valide :
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as ScrapedProductData;
 }
@@ -633,9 +622,7 @@ Reponds UNIQUEMENT en JSON valide :
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as EnrichedPersonaData;
 }
@@ -720,9 +707,7 @@ Reponds UNIQUEMENT en JSON valide :
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as CreativeScore;
 }
@@ -832,9 +817,7 @@ Pour suggestedFormats, utilise uniquement ces valeurs : feed_square, feed_portra
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as BriefConstraints;
 }
@@ -1023,9 +1006,7 @@ N'inclure QUE les champs pertinents dans copy (pas de comparisonLeft/Right pour 
     throw new Error("Pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   return JSON.parse(jsonStr.trim()) as AdConceptResult;
 }

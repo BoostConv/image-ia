@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RawPipelineInput, FilteredContext, BatchLockConfig } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 
 // ============================================================
 // LAYER A+J: CONTEXT FILTER + BATCH LOCKER (merged)
@@ -77,9 +78,7 @@ ${rawContext}
     throw new Error("Context filter: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const parsed = JSON.parse(jsonStr.trim()) as FilteredContext;

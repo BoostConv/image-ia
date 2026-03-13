@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { ProductAnalysisPanel } from "@/components/product/product-analysis-panel";
 import { AnglesPanel } from "@/components/marketing/angles-panel";
-import type { ProductAnalysis, MarketingAngleSpec, AnglesPrioritization, ProductVariant } from "@/lib/db/schema";
+import type { ProductAnalysis, AnglesPrioritization, ProductVariant } from "@/lib/db/schema";
 import Image from "next/image";
 
 function getImageUrl(relativePath: string): string {
@@ -55,12 +55,19 @@ interface Product {
   productAnalysis?: ProductAnalysis | null;
 }
 
+interface PersonaInfo {
+  id: string;
+  name: string;
+}
+
 export function ProductManager({
   brandId,
   initialProducts,
+  personas = [],
 }: {
   brandId: string;
   initialProducts: Product[];
+  personas?: PersonaInfo[];
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [showForm, setShowForm] = useState(false);
@@ -77,9 +84,11 @@ export function ProductManager({
   // AI Analysis state
   const [analyzingProductId, setAnalyzingProductId] = useState<string | null>(null);
   const [generatingAnglesFor, setGeneratingAnglesFor] = useState<string | null>(null);
-  const [productAngles, setProductAngles] = useState<Record<string, AnglesPrioritization>>({});
+  // Angles indexed by "productId:personaId"
+  const [anglesByPersona, setAnglesByPersona] = useState<Record<string, AnglesPrioritization>>({});
   const [showAnalysisFor, setShowAnalysisFor] = useState<string | null>(null);
   const [showAnglesFor, setShowAnglesFor] = useState<string | null>(null);
+  const [selectedPersonaFor, setSelectedPersonaFor] = useState<Record<string, string>>({});
 
   // Form state (manual creation)
   const [name, setName] = useState("");
@@ -158,23 +167,23 @@ export function ProductManager({
     }
   }
 
-  // Generate EPIC marketing angles
-  async function handleGenerateAngles(productId: string) {
-    setGeneratingAnglesFor(productId);
+  // Generate EPIC marketing angles for a specific persona
+  async function handleGenerateAngles(productId: string, personaId: string) {
+    const key = `${productId}:${personaId}`;
+    setGeneratingAnglesFor(key);
     try {
       const res = await fetch(`/api/products/${productId}/angles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ personaIds: [personaId] }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setProductAngles((prev) => ({ ...prev, [productId]: data.angles }));
-        setShowAnglesFor(productId);
+        setAnglesByPersona((prev) => ({ ...prev, [key]: data.angles }));
+        setShowAnglesFor(key);
       } else {
         const error = await res.json();
-        console.error("Angles error:", error);
         alert(`Erreur: ${error.error || "Erreur inconnue"}`);
       }
     } catch (err) {
@@ -182,6 +191,27 @@ export function ProductManager({
     } finally {
       setGeneratingAnglesFor(null);
     }
+  }
+
+  function handleDeleteAngle(key: string, angleId: string) {
+    setAnglesByPersona((prev) => {
+      const current = prev[key];
+      if (!current) return prev;
+      const updatedAngles = current.angles.filter((a) => a.id !== angleId);
+      const updatedPriority = current.priorityMatrix.filter((p) => p.angleId !== angleId);
+      const updatedSynergies = current.synergies.filter(
+        (s) => !s.angleIds.includes(angleId)
+      );
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          angles: updatedAngles,
+          priorityMatrix: updatedPriority,
+          synergies: updatedSynergies,
+        },
+      };
+    });
   }
 
   function resetForm() {
@@ -898,29 +928,6 @@ export function ProductManager({
                             {showAnalysisFor === product.id ? "Masquer analyse" : "Voir analyse"}
                           </Button>
                           <Button
-                            variant={showAnglesFor === product.id ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              if (!productAngles[product.id]) {
-                                handleGenerateAngles(product.id);
-                              } else {
-                                setShowAnglesFor(showAnglesFor === product.id ? null : product.id);
-                              }
-                            }}
-                            disabled={generatingAnglesFor === product.id}
-                          >
-                            {generatingAnglesFor === product.id ? (
-                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Zap className="mr-1.5 h-3.5 w-3.5" />
-                            )}
-                            {productAngles[product.id]
-                              ? showAnglesFor === product.id
-                                ? "Masquer angles"
-                                : "Voir angles EPIC"
-                              : "Generer angles EPIC"}
-                          </Button>
-                          <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleAnalyzeProduct(product.id)}
@@ -946,18 +953,87 @@ export function ProductManager({
                         />
                       </div>
                     )}
+                  </div>
+                </div>
 
-                    {/* Angles Panel */}
-                    {showAnglesFor === product.id && productAngles[product.id] && (
-                      <div className="mt-3">
-                        <AnglesPanel
-                          anglesData={productAngles[product.id]}
-                          productName={product.name}
-                        />
+                {/* Angles EPIC par persona */}
+                {product.productAnalysis && (
+                  <div className="border-t pt-3 mt-3">
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-orange-500" />
+                      Angles EPIC par persona
+                    </h4>
+
+                    {personas.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Ajoutez des personas dans la section ci-dessous pour generer des angles marketing cibles.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {personas.map((persona) => {
+                          const key = `${product.id}:${persona.id}`;
+                          const hasAngles = !!anglesByPersona[key];
+                          const isGenerating = generatingAnglesFor === key;
+                          const isShown = showAnglesFor === key;
+
+                          return (
+                            <div key={persona.id} className="rounded-lg border">
+                              <div className="flex items-center justify-between p-3 bg-muted/30">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
+                                    {persona.name}
+                                  </span>
+                                  {hasAngles && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {anglesByPersona[key].angles.length} angles
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex gap-1.5">
+                                  {hasAngles && (
+                                    <Button
+                                      variant={isShown ? "default" : "outline"}
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => setShowAnglesFor(isShown ? null : key)}
+                                    >
+                                      {isShown ? "Masquer" : "Voir angles"}
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant={hasAngles ? "ghost" : "default"}
+                                    size="sm"
+                                    className={`h-7 text-xs ${!hasAngles ? "bg-orange-500 hover:bg-orange-600" : ""}`}
+                                    onClick={() => handleGenerateAngles(product.id, persona.id)}
+                                    disabled={isGenerating}
+                                  >
+                                    {isGenerating ? (
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Zap className="mr-1 h-3 w-3" />
+                                    )}
+                                    {isGenerating ? "Generation..." : hasAngles ? "Regenerer" : "Generer angles"}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {isShown && hasAngles && (
+                                <div className="p-3 border-t">
+                                  <AnglesPanel
+                                    anglesData={anglesByPersona[key]}
+                                    productName={product.name}
+                                    personas={personas}
+                                    onDeleteAngle={(angleId) => handleDeleteAngle(key, angleId)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             )}
 

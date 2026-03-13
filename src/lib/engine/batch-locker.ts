@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { FilteredContext, BatchLockConfig } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 
 // ============================================================
 // COMPONENT J: BATCH LOCKER
@@ -59,9 +60,7 @@ Niveau de conscience: ${context.awareness_level}
     throw new Error("BatchLocker: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const lock = JSON.parse(jsonStr.trim()) as BatchLockConfig;

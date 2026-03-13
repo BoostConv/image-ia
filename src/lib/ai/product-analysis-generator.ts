@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callClaudeWithRetry } from "./claude-retry";
+import { extractJsonFromResponse } from "./json-parser";
 import type {
   ProductAnalysis,
   FABBenefit,
@@ -237,12 +238,10 @@ ${productContext}
     throw new Error("Product Analysis Generator: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
-    const raw = JSON.parse(jsonStr.trim()) as RawProductAnalysisResponse;
+    const raw = JSON.parse(jsonStr) as RawProductAnalysisResponse;
 
     // Calculate overall confidence
     const confidenceValues = Object.values(raw.fieldConfidences || {});

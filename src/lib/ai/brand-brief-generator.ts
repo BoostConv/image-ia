@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callClaudeWithRetry } from "./claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import type {
   IdentiteFondamentale,
   PositionnementStrategique,
@@ -221,9 +222,7 @@ IMPORTANT :
     throw new Error("Brand Brief Generator: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const raw = JSON.parse(jsonStr.trim()) as RawBriefResponse;

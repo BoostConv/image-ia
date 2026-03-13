@@ -7,6 +7,7 @@ import type {
   CreativeBrief,
 } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 
 // ============================================================
 // LAYER C: AD DIRECTOR (v3)
@@ -260,9 +261,7 @@ ${renderBlock}
     throw new Error("Art director: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const raw = JSON.parse(jsonStr.trim());

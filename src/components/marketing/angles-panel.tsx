@@ -9,12 +9,19 @@ import type {
   Narrative,
 } from "@/lib/db/schema";
 
+interface PersonaInfo {
+  id: string;
+  name: string;
+}
+
 interface AnglesPanelProps {
   anglesData: AnglesPrioritization;
   productName: string;
+  personas?: PersonaInfo[];
+  onDeleteAngle?: (angleId: string) => void;
 }
 
-export function AnglesPanel({ anglesData, productName }: AnglesPanelProps) {
+export function AnglesPanel({ anglesData, productName, personas = [], onDeleteAngle }: AnglesPanelProps) {
   const [selectedAngle, setSelectedAngle] = useState<MarketingAngleSpec | null>(
     anglesData.angles[0] || null
   );
@@ -46,6 +53,10 @@ export function AnglesPanel({ anglesData, productName }: AnglesPanelProps) {
 
   const getPriority = (angleId: string) => {
     return anglesData.priorityMatrix.find((p) => p.angleId === angleId);
+  };
+
+  const getPersonaName = (personaId: string) => {
+    return personas.find((p) => p.id === personaId)?.name || personaId;
   };
 
   return (
@@ -100,46 +111,76 @@ export function AnglesPanel({ anglesData, productName }: AnglesPanelProps) {
                   {(anglesByType[epicType] || []).map((angle) => {
                     const priority = getPriority(angle.id);
                     return (
-                      <button
+                      <div
                         key={angle.id}
-                        onClick={() => {
-                          setSelectedAngle(angle);
-                          setViewMode("detail");
-                        }}
-                        className={`w-full text-left p-3 rounded-lg border transition-all hover:shadow-md ${
+                        className={`relative w-full text-left p-3 rounded-lg border transition-all hover:shadow-md ${
                           selectedAngle?.id === angle.id
                             ? `${epicColors[epicType].border} bg-white shadow-md`
                             : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
-                        <div className="flex items-start justify-between">
-                          <span className="text-sm font-medium text-gray-900">{angle.name}</span>
-                          {priority && (
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                priority.priority === "high"
-                                  ? "bg-green-100 text-green-700"
-                                  : priority.priority === "medium"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-gray-100 text-gray-600"
-                              }`}
-                            >
-                              {priority.suggestedBudgetPercent}%
-                            </span>
+                        {/* Delete button */}
+                        {onDeleteAngle && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteAngle(angle.id);
+                            }}
+                            className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                            title="Supprimer cet angle"
+                          >
+                            <span className="text-xs leading-none">&times;</span>
+                          </button>
+                        )}
+                        <button
+                          className="w-full text-left"
+                          onClick={() => {
+                            setSelectedAngle(angle);
+                            setViewMode("detail");
+                          }}
+                        >
+                          <div className="flex items-start justify-between pr-5">
+                            <span className="text-sm font-medium text-gray-900">{angle.name}</span>
+                            {priority && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                  priority.priority === "high"
+                                    ? "bg-green-100 text-green-700"
+                                    : priority.priority === "medium"
+                                      ? "bg-yellow-100 text-yellow-700"
+                                      : "bg-gray-100 text-gray-600"
+                                }`}
+                              >
+                                {priority.suggestedBudgetPercent}%
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 line-clamp-2">
+                            {angle.coreBenefit}
+                          </p>
+                          {/* Persona badges */}
+                          {angle.targetPersonaIds.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {angle.targetPersonaIds.map((pid) => (
+                                <span
+                                  key={pid}
+                                  className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[10px] font-medium"
+                                >
+                                  {getPersonaName(pid)}
+                                </span>
+                              ))}
+                            </div>
                           )}
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500 line-clamp-2">
-                          {angle.coreBenefit}
-                        </p>
-                        <div className="mt-2 flex gap-1">
-                          <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
-                            {angle.terrain.temperature}
-                          </span>
-                          <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
-                            {angle.hooks.length} hooks
-                          </span>
-                        </div>
-                      </button>
+                          <div className="mt-2 flex gap-1">
+                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
+                              {angle.terrain.temperature}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
+                              {angle.hooks.length} hooks
+                            </span>
+                          </div>
+                        </button>
+                      </div>
                     );
                   })}
                   {!anglesByType[epicType]?.length && (
@@ -199,6 +240,7 @@ export function AnglesPanel({ anglesData, productName }: AnglesPanelProps) {
             onBack={() => setViewMode("grid")}
             allAngles={anglesData.angles}
             onSelectAngle={setSelectedAngle}
+            getPersonaName={getPersonaName}
           />
         </div>
       )}
@@ -218,6 +260,7 @@ interface AngleDetailProps {
   onBack: () => void;
   allAngles: MarketingAngleSpec[];
   onSelectAngle: (angle: MarketingAngleSpec) => void;
+  getPersonaName: (id: string) => string;
 }
 
 function AngleDetail({
@@ -228,6 +271,7 @@ function AngleDetail({
   onBack,
   allAngles,
   onSelectAngle,
+  getPersonaName,
 }: AngleDetailProps) {
   const [activeTab, setActiveTab] = useState<"terrain" | "hooks" | "narratives" | "visual">(
     "terrain"
@@ -271,6 +315,19 @@ function AngleDetail({
             </div>
             <h3 className="mt-2 text-xl font-bold text-gray-900">{angle.name}</h3>
             <p className="mt-2 text-gray-700">{angle.coreBenefit}</p>
+            {angle.targetPersonaIds.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <span className="text-xs text-gray-500 self-center mr-1">Personas:</span>
+                {angle.targetPersonaIds.map((pid) => (
+                  <span
+                    key={pid}
+                    className="px-2 py-0.5 bg-purple-100 text-purple-700 border border-purple-200 rounded-full text-xs font-medium"
+                  >
+                    {getPersonaName(pid)}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           {priority && (
             <div className="text-right">

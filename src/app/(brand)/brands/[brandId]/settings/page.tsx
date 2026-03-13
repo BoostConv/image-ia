@@ -59,7 +59,7 @@ export default async function BrandSettingsPage({
       <Separator />
 
       {/* Products */}
-      <ProductManager brandId={brandId} initialProducts={products} />
+      <ProductManager brandId={brandId} initialProducts={products} personas={personas} />
 
       <Separator />
 

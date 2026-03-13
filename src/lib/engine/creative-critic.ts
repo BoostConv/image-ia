@@ -4,6 +4,7 @@ import type { BrandStylePolicy } from "./brand-style-policy";
 import { checkPolicyViolations, countStretchInBatch } from "./brand-style-policy";
 import { isValidFormatForAwareness, isValidJobForAwareness } from "./taxonomy";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 
 // ============================================================
 // LAYER B2: CREATIVE CRITIC
@@ -329,9 +330,7 @@ Format :
     throw new Error("CreativeCritic: no text response from Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   const rawScores = JSON.parse(jsonStr.trim()) as Array<{
     stop_scroll: number;

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { nanoid } from "nanoid";
 import { callClaudeWithRetry } from "./claude-retry";
+import { extractJsonFromResponse } from "./json-parser";
 import type {
   ProductAnalysis,
   IdentiteFondamentale,
@@ -231,12 +232,10 @@ ${context}
     throw new Error("Marketing Angles Generator: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
-    const raw = JSON.parse(jsonStr.trim()) as RawAnglesResponse;
+    const raw = JSON.parse(jsonStr) as RawAnglesResponse;
 
     // Validate and enrich angles
     const angles = validateAngles(raw.angles, input.personas);

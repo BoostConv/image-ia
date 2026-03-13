@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ConceptSpec, FilteredContext } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import { getCopywritingFrameworkDirective, getAllHeadlineMechanismsDirective } from "./knowledge/copywriting-framework";
 
 // ============================================================
@@ -101,9 +102,7 @@ CONTEXTE:
     };
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const polished = JSON.parse(jsonStr.trim()) as PolishedCopy;

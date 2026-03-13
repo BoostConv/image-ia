@@ -10,6 +10,7 @@ import type {
   PairwiseRanking,
 } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import { getKnowledgeForStage } from "./knowledge";
 import type { AwarenessLevel } from "./knowledge";
 import { getBaseImageCalibrationDirective, getComposedAdCalibrationDirective } from "./knowledge/evaluator-calibration";
@@ -109,9 +110,7 @@ Archetype: ${result.brief.creative_archetype}
     throw new Error("DualEvaluator base: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const evaluation = JSON.parse(jsonStr.trim()) as BaseImageEvaluation;
@@ -217,9 +216,7 @@ CTA: "${composed.copyAssets.cta || "aucun"}"
     throw new Error("DualEvaluator composed: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const evaluation = JSON.parse(jsonStr.trim()) as ComposedAdEvaluation;
@@ -337,9 +334,7 @@ Promesse : ${context.promise}
     throw new Error("DualEvaluator ranking: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const ranking = JSON.parse(jsonStr.trim()) as PairwiseRanking;

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import type { BrandStylePolicy } from "./brand-style-policy";
 import type { VisualStyle, StyleMode } from "./taxonomy";
 
@@ -155,9 +156,7 @@ Pour closest_visual_styles, choisis parmi: quiet_luxury, hyper_clean_tech, edito
     throw new Error("analyzeBrandDA: no text response from Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const raw = JSON.parse(jsonStr.trim());

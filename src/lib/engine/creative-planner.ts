@@ -12,6 +12,7 @@ import type {
 import type { BrandStylePolicy } from "./brand-style-policy";
 import { assignRenderProperties } from "./render-mode";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import { getKnowledgeForStage } from "./knowledge";
 import type { AwarenessLevel } from "./knowledge";
 import {
@@ -364,9 +365,7 @@ ${skeletonDescription}
     throw new Error("ConceptPlanner: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const rawConcepts = JSON.parse(jsonStr.trim()) as ConceptSpec[];
@@ -690,9 +689,7 @@ ${anglesDescription}
     throw new Error("Creative planner: pas de reponse textuelle de Claude");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const briefs = JSON.parse(jsonStr.trim()) as CreativeBrief[];

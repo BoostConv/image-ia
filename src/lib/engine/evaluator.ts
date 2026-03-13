@@ -7,6 +7,7 @@ import type {
   BatchEvaluation,
 } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
+import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 
 // ============================================================
 // LAYER F: EVALUATOR
@@ -99,9 +100,7 @@ Hook vise: ${result.brief.hook_type}
     throw new Error("Evaluator: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const evaluation = JSON.parse(jsonStr.trim()) as ImageEvaluation;
@@ -193,9 +192,7 @@ Promesse a communiquer : ${context.promise}
     throw new Error("Evaluator ranking: pas de reponse textuelle");
   }
 
-  let jsonStr = textContent.text;
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const jsonStr = extractJsonFromResponse(textContent.text);
 
   try {
     const ranking = JSON.parse(jsonStr.trim()) as PairwiseRanking;
