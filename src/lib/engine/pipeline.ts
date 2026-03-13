@@ -295,6 +295,8 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     );
 
     // ─── Phase 5+: Build prompts using AD-FOCUSED builder ────
+    // Include copy assets so Gemini renders text directly in the image
+    const geminiCopyAssets = geminiIndices.map((i) => allCopyAssets[i]?.copyAssets);
     const geminiPrompts = buildAdFocusedPromptBatch({
       concepts: geminiConcepts,
       directions: geminiAdDirs,
@@ -304,6 +306,7 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
       layoutFamilies,
       layoutInspirations,
       brandStyleImages,
+      copyAssetsByIndex: geminiCopyAssets,
     });
 
     geminiPrompts.forEach((p, gi) => {
@@ -454,48 +457,33 @@ export async function runPipeline(config: PipelineConfig): Promise<PipelineResul
     cta: p.cta,
   })));
 
-  // ─── LAYER G: Composer (v3 — taxonomy-driven layout) ────────
+  // ─── LAYER G: SKIP Composer — Gemini renders text directly ────
+  // Text (headline, CTA, brand) is now baked into the Gemini prompt.
+  // No SVG overlay needed.
   const composedAds: ComposedAd[] = [];
   const compositionGateVerdicts: GateVerdict[] = [];
 
-  onEvent({ type: "phase", phase: "G", message: "Composition v3 des publicités (SVG text overlay)..." });
+  onEvent({ type: "phase", phase: "G", message: "Texte intégré par Gemini — pas de composition SVG." });
 
   for (let i = 0; i < renders.length; i++) {
+    // Pass-through: use the rendered image as-is (text already in image)
     const concept = keptConcepts[i];
-    const brief = briefs[i];
     const copyAssets = allCopyAssets[i]?.copyAssets || deriveCopyAssetsV3(concept, context);
-
-    onEvent({
-      type: "composing",
-      index: i,
-      layout: concept.layout_family,
-    });
-
-    const composerInput: ComposerInput = {
-      image: renders[i].final_image,
+    composedAds.push({
+      buffer: renders[i].final_image,
       mimeType: renders[i].final_mime_type,
-      brief,
-      artDirection: artDirections[i],
-      context,
-      renderMode: concept.render_mode,
-      overlayIntent: concept.overlay_intent,
-      textDensity: concept.text_density,
+      layoutUsed: "none",
+      zonesUsed: [],
+      collisions: [],
+      fallbacksApplied: [],
       copyAssets,
-      aspectRatio: input.aspectRatio,
-      // v3 additions
-      layoutFamily: concept.layout_family,
-      proofMechanism: concept.proof_mechanism,
-      formatFamily: concept.format_family,
-    };
-
-    const composed = await composeAd(composerInput);
-    composedAds.push(composed);
+    });
 
     onEvent({
       type: "composed",
       index: i,
-      layoutUsed: composed.layoutUsed,
-      fallbacks: composed.fallbacksApplied,
+      layoutUsed: "none",
+      fallbacks: [],
     });
   }
 

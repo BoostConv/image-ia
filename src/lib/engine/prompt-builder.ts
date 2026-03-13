@@ -123,6 +123,7 @@ export interface AdFocusedPromptInput {
   layoutInspiration?: Buffer;
   brandStyleImages?: Buffer[];
   layoutFamily: LayoutFamily;
+  copyAssets?: CopyAssets;
 }
 
 /**
@@ -136,11 +137,14 @@ export function buildAdFocusedPrompt(
 
   const parts: string[] = [];
 
-  // CRITICAL: Anti-text instruction FIRST — Gemini prioritizes early instructions
-  parts.push("IMPORTANT: Generate ONLY a photograph/image with ZERO text, ZERO letters, ZERO words, ZERO typography anywhere in the image. The image must contain NO writing of any kind.");
+  // Headline & CTA — Gemini renders the text directly in the image
+  const headline = input.copyAssets?.headline || concept.headline;
+  const cta = input.copyAssets?.cta || concept.cta;
+  const brandName = input.copyAssets?.brandName || context.brand_name;
+
+  parts.push(`Create a Meta/Instagram ad image for ${brandName}.`);
 
   // Scene description — short, visual, concrete
-  parts.push("");
   parts.push(concept.visual_device + ".");
 
   // Product placement
@@ -149,7 +153,7 @@ export function buildAdFocusedPrompt(
   );
   if (concept.product_role !== "absent") {
     if (hasProductRef) {
-      parts.push(`${context.product_name} reproduced EXACTLY from the reference photo — same packaging, label, colors, shape. Placed at ${direction.product_placement}, ~${Math.round(direction.product_scale * 100)}% of frame.`);
+      parts.push(`Show the EXACT product from the reference photo — same packaging, label, colors, shape. ${context.product_name} placed at ${direction.product_placement}.`);
     } else {
       parts.push(`${context.product_name} at ${direction.product_placement}.`);
     }
@@ -158,8 +162,14 @@ export function buildAdFocusedPrompt(
   // Environment + lighting (one line)
   parts.push(`${direction.environment}. ${direction.lighting.split(".")[0]}. ${direction.color_direction.split(".")[0]}.`);
 
-  // Composition + safe zone
-  parts.push(`${direction.composition}. Leave ${direction.safe_zone.percentage}% empty space at ${direction.safe_zone.position} for later text overlay — keep this area clean and uncluttered.`);
+  // Text overlay — Gemini handles it
+  parts.push(`Include this text on the image, cleanly integrated into the composition:`);
+  parts.push(`- Headline (large, bold): "${headline}"`);
+  parts.push(`- CTA button or badge: "${cta}"`);
+  if (brandName) {
+    parts.push(`- Brand name: "${brandName}"`);
+  }
+  parts.push(`Place text at ${direction.safe_zone.position}. Text must be perfectly legible with good contrast against the background. Use clean, modern sans-serif typography.`);
 
   // Props (max 2)
   if (direction.prop_list.length > 0) {
@@ -167,8 +177,9 @@ export function buildAdFocusedPrompt(
   }
 
   // Avoid list (compact)
-  const avoidItems = [...direction.avoid.slice(0, 3), "any text or letters or words or typography"];
-  parts.push(`Avoid: ${avoidItems.join(", ")}.`);
+  if (direction.avoid.length > 0) {
+    parts.push(`Avoid: ${direction.avoid.slice(0, 3).join(", ")}.`);
+  }
 
   // Condense — no IMAGE_RULES_SUFFIX needed, anti-text is already in prompt
   const promptText = condensePrompt(parts.join("\n"), MAX_AD_FOCUSED_LENGTH);
@@ -201,18 +212,13 @@ function buildAdFocusedPass2(
     );
   }
 
-  // Enforce safe zones
-  edits.push(
-    `Ensure ${direction.safe_zone.percentage}% empty space at ${direction.safe_zone.position} for text overlay. No text anywhere.`
-  );
+  // Ensure text is legible
+  edits.push("Ensure all text in the image is perfectly legible, well-contrasted, and cleanly rendered.");
 
   // Color refinement
   if (direction.color_direction.length > 10) {
     edits.push(`Colors: ${direction.color_direction.slice(0, 80)}.`);
   }
-
-  // Reading order check
-  edits.push(`Verify eye path: ${direction.eye_path}.`);
 
   return edits.join(" ");
 }
@@ -625,6 +631,7 @@ export interface AdFocusedBatchInput {
   layoutFamilies: LayoutFamily[];
   layoutInspirations?: (Buffer | undefined)[];
   brandStyleImages?: Buffer[];
+  copyAssetsByIndex?: CopyAssets[];
 }
 
 /**
@@ -643,6 +650,7 @@ export function buildAdFocusedPromptBatch(
     layoutFamilies,
     layoutInspirations,
     brandStyleImages,
+    copyAssetsByIndex,
   } = input;
 
   return concepts.map((concept, i) => {
@@ -650,6 +658,7 @@ export function buildAdFocusedPromptBatch(
     const references = referencesByIndex[i] || [];
     const layoutFamily = layoutFamilies[i] || concept.layout_family;
     const layoutInspiration = layoutInspirations?.[i];
+    const copyAssets = copyAssetsByIndex?.[i];
 
     // If we don't have direction, fallback to V3
     if (!direction) {
@@ -665,6 +674,7 @@ export function buildAdFocusedPromptBatch(
       layoutFamily: layoutFamily as LayoutFamily,
       layoutInspiration,
       brandStyleImages,
+      copyAssets,
     });
   });
 }
