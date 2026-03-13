@@ -112,7 +112,7 @@ export function buildPromptV3(
 // - REFERENCE STRATEGY (layout inspiration, brand style)
 // ============================================================
 
-const MAX_AD_FOCUSED_LENGTH = 2500; // Increased for full structured prompt
+const MAX_AD_FOCUSED_LENGTH = 1200; // Shorter = better for Gemini
 
 export interface AdFocusedPromptInput {
   concept: ConceptSpec;
@@ -136,94 +136,42 @@ export function buildAdFocusedPrompt(
 
   const parts: string[] = [];
 
-  // === AD MISSION ===
-  parts.push("=== AD MISSION ===");
-  parts.push(`Job: ${concept.ad_job} — Meta ads visual for ${context.format_goal}.`);
-  parts.push(`Purpose: Quand la personne voit cette image, elle comprend immediatement que ${extractBeliefTo(concept.belief_shift)}.`);
-  parts.push(`Belief Shift: FROM "${extractBeliefFrom(concept.belief_shift)}" → TO "${extractBeliefTo(concept.belief_shift)}".`);
+  // CRITICAL: Anti-text instruction FIRST — Gemini prioritizes early instructions
+  parts.push("IMPORTANT: Generate ONLY a photograph/image with ZERO text, ZERO letters, ZERO words, ZERO typography anywhere in the image. The image must contain NO writing of any kind.");
 
-  // === LAYOUT STRUCTURE ===
+  // Scene description — short, visual, concrete
   parts.push("");
-  parts.push("=== LAYOUT STRUCTURE ===");
-  parts.push(`Type: ${formatLayoutFamily(layoutFamily)} (see layout reference image attached).`);
-  parts.push(`Grid: ${direction.grid_system}.`);
-  parts.push(`Reading Order: ${direction.reading_order}.`);
-  parts.push(`Eye Path: ${direction.eye_path}.`);
+  parts.push(concept.visual_device + ".");
 
-  // Safe zones
-  const overlayMap = direction.overlay_map;
-  parts.push(`Safe Zones: Headline at ${overlayMap.headline_zone}, CTA at ${overlayMap.cta_zone}.`);
-  if (overlayMap.forbidden_zones.length > 0) {
-    parts.push(`FORBIDDEN: Never place elements in ${overlayMap.forbidden_zones.join(", ")}.`);
-  }
-
-  // === VISUAL FOCUS ===
-  parts.push("");
-  parts.push("=== VISUAL FOCUS ===");
-  parts.push(`Attention Anchor: ${direction.attention_anchor} (ce que l'oeil voit en premier).`);
-  parts.push(`Product Role: ${concept.product_role} at ${direction.product_placement}.`);
-  if (direction.product_scale > 0) {
-    parts.push(`Product Scale: ~${Math.round(direction.product_scale * 100)}% of frame.`);
-  }
-
-  // Product fidelity from reference
+  // Product placement
   const hasProductRef = references.some(
     (r) => r.role === "product_fidelity" || r.role === "packaging" || r.role === "texture_material"
   );
-  if (hasProductRef && concept.product_role !== "absent") {
-    parts.push(`EXACT product from reference: same packaging, colors, label, shape. ${context.product_name}.`);
+  if (concept.product_role !== "absent") {
+    if (hasProductRef) {
+      parts.push(`${context.product_name} reproduced EXACTLY from the reference photo — same packaging, label, colors, shape. Placed at ${direction.product_placement}, ~${Math.round(direction.product_scale * 100)}% of frame.`);
+    } else {
+      parts.push(`${context.product_name} at ${direction.product_placement}.`);
+    }
   }
 
-  // === SCENE ===
-  parts.push("");
-  parts.push("=== SCENE ===");
-  parts.push(`Visual Device: ${concept.visual_device}.`);
-  parts.push(`Environment: ${direction.environment}.`);
-  parts.push(`Lighting: ${direction.lighting.split(".")[0]}.`);
-  parts.push(`Mood: ${inferMood(concept, direction)}.`);
-  parts.push(`Colors: ${direction.color_direction.split(".")[0]}.`);
+  // Environment + lighting (one line)
+  parts.push(`${direction.environment}. ${direction.lighting.split(".")[0]}. ${direction.color_direction.split(".")[0]}.`);
 
-  // Props if relevant
+  // Composition + safe zone
+  parts.push(`${direction.composition}. Leave ${direction.safe_zone.percentage}% empty space at ${direction.safe_zone.position} for later text overlay — keep this area clean and uncluttered.`);
+
+  // Props (max 2)
   if (direction.prop_list.length > 0) {
-    parts.push(`Props: ${direction.prop_list.slice(0, 3).join(", ")}.`);
+    parts.push(`Props: ${direction.prop_list.slice(0, 2).join(", ")}.`);
   }
 
-  // === REFERENCE USAGE ===
-  parts.push("");
-  parts.push("=== REFERENCE USAGE ===");
+  // Avoid list (compact)
+  const avoidItems = [...direction.avoid.slice(0, 3), "any text or letters or words or typography"];
+  parts.push(`Avoid: ${avoidItems.join(", ")}.`);
 
-  const hasLayoutRef = references.some(r => r.role === "layout_structure");
-  if (hasLayoutRef || input.layoutInspiration) {
-    parts.push("LAYOUT REF: Respecter la structure et proportions de l'image layout attachee.");
-  }
-
-  if (hasProductRef) {
-    parts.push("PRODUCT REF: Reproduction exacte du packaging, couleurs, forme.");
-  }
-
-  const hasBrandStyle = references.some(r => r.role === "brand_style" || r.role === "style_mood");
-  if (hasBrandStyle || (input.brandStyleImages && input.brandStyleImages.length > 0)) {
-    parts.push("BRAND STYLE: S'inspirer du style visuel des images marque attachees.");
-  }
-
-  // === ASPECT RATIO CONSTRAINTS ===
-  if (aspectRatio === "9:16") {
-    parts.push("");
-    parts.push("=== STORIES/REELS CONSTRAINTS ===");
-    parts.push("Top 15% and bottom 20% may be cut off - keep critical elements in center 65%.");
-    parts.push("Vertical composition, eye flows top to bottom.");
-  }
-
-  // === NEVER (avoid list) ===
-  parts.push("");
-  parts.push("=== NEVER ===");
-  if (direction.avoid.length > 0) {
-    parts.push(direction.avoid.join(", ") + ".");
-  }
-  parts.push("No text, no typography, no words, no letters, no fake logos outside the real product, no watermark.");
-
-  // Condense and add suffix
-  const promptText = condensePrompt(parts.join("\n"), MAX_AD_FOCUSED_LENGTH - IMAGE_RULES_SUFFIX.length) + IMAGE_RULES_SUFFIX;
+  // Condense — no IMAGE_RULES_SUFFIX needed, anti-text is already in prompt
+  const promptText = condensePrompt(parts.join("\n"), MAX_AD_FOCUSED_LENGTH);
 
   // Build edit prompt for pass 2
   const editPrompt = buildAdFocusedPass2(concept, direction, context);
