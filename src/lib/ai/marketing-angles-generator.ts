@@ -86,7 +86,7 @@ export async function generateMarketingAngles(
   const response = await callClaudeWithRetry(() =>
     client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
+      max_tokens: 8000,
       system: `Tu es un DIRECTEUR DE CREATION PUBLICITAIRE specialise DTC/e-commerce.
 
 ## TA MISSION
@@ -137,13 +137,12 @@ Apres avoir genere les angles:
 
 ## REGLES
 
-- GENERER 8 A 12 ANGLES AU TOTAL (2-3 par type EPIC)
-- Pour chaque type EPIC (Emotional, Practical, Identity, Critical), generer 2-3 angles DIFFERENTS
-- Chaque angle = RADICALEMENT different meme au sein du meme type EPIC
+- GENERER EXACTEMENT 5 ANGLES : 1-2 par type EPIC, couvrir les 4 types
+- Chaque angle = RADICALEMENT different
 - Les hooks doivent etre SPECIFIQUES au produit
 - Les narratives doivent etre ACTIONABLES
 - Lier chaque angle aux personas si fournis
-- VARIER les terrains, temperatures et emotions entre les angles du meme type
+- VARIER les terrains, temperatures et emotions entre les angles
 
 Reponds UNIQUEMENT en JSON valide, sans texte avant ou apres.`,
       messages: [
