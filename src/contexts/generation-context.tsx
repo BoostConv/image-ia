@@ -216,7 +216,9 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         await readSSEStream(response);
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
-          setError((err as Error).message);
+          const msg = (err as Error).message || String(err);
+          console.error("[Generation] Stream error:", msg);
+          setError(`Erreur de connexion: ${msg}. Le serveur a peut-etre plante. Verifiez les logs.`);
         }
       }
 

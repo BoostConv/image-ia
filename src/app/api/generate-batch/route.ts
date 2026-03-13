@@ -470,14 +470,23 @@ export async function POST(request: NextRequest) {
             total: count,
           });
         } catch (err) {
-          send({
-            type: "fatal_error",
-            error: (err as Error).message,
-          });
+          const errorMessage = err instanceof Error
+            ? `${err.message}\n${err.stack?.split("\n").slice(1, 4).join("\n") || ""}`
+            : String(err);
+          console.error("[generate-batch] Pipeline fatal error:", errorMessage);
+
+          try {
+            send({
+              type: "fatal_error",
+              error: err instanceof Error ? err.message : String(err),
+            });
+          } catch {
+            // Stream may already be closed
+          }
 
           await updateGenerationStatus(generationId, "failed", {
-            errorMessage: (err as Error).message,
-          });
+            errorMessage: err instanceof Error ? err.message : String(err),
+          }).catch(() => {});
         }
 
         controller.close();
