@@ -28,10 +28,7 @@ import { ProductAnalysisPanel } from "@/components/product/product-analysis-pane
 import { AnglesPanel } from "@/components/marketing/angles-panel";
 import type { ProductAnalysis, AnglesPrioritization, ProductVariant } from "@/lib/db/schema";
 import Image from "next/image";
-
-function getImageUrl(relativePath: string): string {
-  return `/api/images/${encodeURIComponent(relativePath)}`;
-}
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface Product {
   id: string;
@@ -418,7 +415,7 @@ export function ProductManager({
                 {expandedId !== product.id && product.imagePaths?.[0] && (
                   <div className="relative h-20 w-20 rounded-lg overflow-hidden border bg-white shrink-0">
                     <Image
-                      src={getImageUrl(product.imagePaths[0])}
+                      src={getPublicImageUrl(product.imagePaths[0])}
                       alt={product.name}
                       fill
                       className="object-contain"
@@ -501,7 +498,7 @@ export function ProductManager({
                 {product.imagePaths && product.imagePaths.length > 0 && (
                   <div className="relative h-40 w-full rounded-lg overflow-hidden border bg-white">
                     <Image
-                      src={getImageUrl(product.imagePaths[0])}
+                      src={getPublicImageUrl(product.imagePaths[0])}
                       alt={product.name}
                       fill
                       className="object-contain"
@@ -517,7 +514,7 @@ export function ProductManager({
                     {product.imagePaths?.map((path, i) => (
                       <div key={i} className="group relative h-20 w-20 rounded-md overflow-hidden border">
                         <Image
-                          src={getImageUrl(path)}
+                          src={getPublicImageUrl(path)}
                           alt={`Ref ${i + 1}`}
                           fill
                           className="object-cover"
@@ -572,7 +569,7 @@ export function ProductManager({
                             {variant.imagePaths.map((path, imgIdx) => (
                               <div key={imgIdx} className="group relative h-16 w-16 rounded-md overflow-hidden border">
                                 <Image
-                                  src={getImageUrl(path)}
+                                  src={getPublicImageUrl(path)}
                                   alt={`${variant.name} ${imgIdx + 1}`}
                                   fill
                                   className="object-cover"
@@ -857,7 +854,7 @@ export function ProductManager({
                     {(editData.imagePaths || product.imagePaths)?.map((path, i) => (
                       <div key={i} className="group relative h-20 w-20 rounded-md overflow-hidden border">
                         <Image
-                          src={getImageUrl(path)}
+                          src={getPublicImageUrl(path)}
                           alt={`Ref ${i + 1}`}
                           fill
                           className="object-cover"

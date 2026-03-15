@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { ReviewButtons, type ReviewVerdict } from "@/components/reviews/review-buttons";
 import { ReviewModal } from "@/components/reviews/review-modal";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface LibraryImage {
   id: string;
@@ -406,7 +407,7 @@ export function LibraryClient({ brandId, brandName, images: initialImages }: Lib
             >
               <div className="relative aspect-square">
                 <Image
-                  src={`/api/images/${encodeURIComponent(img.filePath)}`}
+                  src={getPublicImageUrl(img.filePath)}
                   alt="Visuel genere"
                   fill
                   className="object-cover"
@@ -507,7 +508,7 @@ export function LibraryClient({ brandId, brandName, images: initialImages }: Lib
             {/* Image */}
             <div className="relative w-full md:w-1/2 aspect-square md:aspect-auto md:min-h-[500px] bg-muted">
               <Image
-                src={`/api/images/${encodeURIComponent(detailImage.filePath)}`}
+                src={getPublicImageUrl(detailImage.filePath)}
                 alt="Visuel genere"
                 fill
                 className="object-contain"
@@ -714,7 +715,7 @@ export function LibraryClient({ brandId, brandName, images: initialImages }: Lib
                   className="text-xs"
                   onClick={() => {
                     const a = document.createElement("a");
-                    a.href = `/api/images/${encodeURIComponent(detailImage.filePath)}`;
+                    a.href = getPublicImageUrl(detailImage.filePath);
                     a.download = `visuel_${detailImage.id}.png`;
                     a.click();
                   }}

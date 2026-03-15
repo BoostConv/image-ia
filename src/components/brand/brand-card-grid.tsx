@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import { Palette, Images, CheckCircle, XCircle, Trash2 } from "lucide-react";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface BrandWithStats {
   id: string;
@@ -58,7 +59,7 @@ export function BrandCardGrid({ brands }: { brands: BrandWithStats[] }) {
                   {brand.logoPath ? (
                     <div className="relative h-10 w-10 rounded-lg overflow-hidden border bg-white">
                       <Image
-                        src={`/api/images/${encodeURIComponent(brand.logoPath)}`}
+                        src={getPublicImageUrl(brand.logoPath)}
                         alt={brand.name}
                         fill
                         className="object-contain p-0.5"

@@ -18,9 +18,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-function getImageUrl(relativePath: string): string {
-  return `/api/images/${encodeURIComponent(relativePath)}`;
-}
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface BrandDAFingerprint {
   dominant_colors: string[];
@@ -249,7 +247,7 @@ export function BrandDAClient({
               className="group relative rounded-lg overflow-hidden ring-1 ring-foreground/5 bg-muted aspect-square"
             >
               <img
-                src={getImageUrl(img)}
+                src={getPublicImageUrl(img)}
                 alt={`Style ${i + 1}`}
                 className="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"

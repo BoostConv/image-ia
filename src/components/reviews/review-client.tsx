@@ -14,10 +14,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import Image from "next/image";
-
-function getImageUrl(relativePath: string): string {
-  return `/api/images/${encodeURIComponent(relativePath)}`;
-}
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface ReviewImage {
   id: string;
@@ -155,7 +152,7 @@ export function ReviewClient({
                 >
                   <div className="relative aspect-square">
                     <Image
-                      src={getImageUrl(img.filePath)}
+                      src={getPublicImageUrl(img.filePath)}
                       alt="Visuel"
                       fill
                       className="object-cover"
@@ -210,7 +207,7 @@ export function ReviewClient({
                 {/* Preview */}
                 <div className="relative aspect-square rounded-lg overflow-hidden">
                   <Image
-                    src={getImageUrl(selectedImage.filePath)}
+                    src={getPublicImageUrl(selectedImage.filePath)}
                     alt="Visuel selectionne"
                     fill
                     className="object-cover"

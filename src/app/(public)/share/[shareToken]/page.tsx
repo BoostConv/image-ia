@@ -7,6 +7,7 @@ import { Loader2, Eye, CheckCircle2, XCircle, Pencil, Copy } from "lucide-react"
 import { ReviewButtons, type ReviewVerdict } from "@/components/reviews/review-buttons";
 import { ReviewModal } from "@/components/reviews/review-modal";
 import { ReviewerIdentityModal, type ReviewerIdentity } from "@/components/reviews/reviewer-identity-modal";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface GalleryImage {
   id: string;
@@ -291,7 +292,7 @@ export default function PublicGalleryPage() {
             <div className="md:flex">
               <div className="md:w-2/3 bg-gray-100 flex items-center justify-center p-4">
                 <Image
-                  src={`/api/images/${encodeURIComponent(selectedImage.filePath)}`}
+                  src={getPublicImageUrl(selectedImage.filePath)}
                   alt="Visual"
                   width={800}
                   height={800}
@@ -372,7 +373,7 @@ export default function PublicGalleryPage() {
                   style={verdict ? { "--tw-ring-color": badgeColor?.replace("bg-", "") } as React.CSSProperties : undefined}
                 >
                   <Image
-                    src={`/api/images/${encodeURIComponent(img.filePath)}`}
+                    src={getPublicImageUrl(img.filePath)}
                     alt="Visual"
                     fill
                     className="object-cover group-hover:scale-105 transition-transform duration-300"

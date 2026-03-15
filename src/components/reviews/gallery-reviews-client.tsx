@@ -18,6 +18,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface GalleryImage {
   id: string;
@@ -121,7 +122,7 @@ export function GalleryReviewsClient({
                     style={{ zIndex: 3 - i }}
                   >
                     <Image
-                      src={`/api/images/${encodeURIComponent(img.filePath)}`}
+                      src={getPublicImageUrl(img.filePath)}
                       alt=""
                       fill
                       className="object-cover"
@@ -245,7 +246,7 @@ export function GalleryReviewsClient({
                         <div key={img.id} className="space-y-1.5">
                           <div className="relative aspect-square rounded-lg overflow-hidden bg-muted border">
                             <Image
-                              src={`/api/images/${encodeURIComponent(img.filePath)}`}
+                              src={getPublicImageUrl(img.filePath)}
                               alt=""
                               fill
                               className="object-cover"

@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
 } from "lucide-react";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface BrandSidebarProps {
   brandId: string;
@@ -95,7 +96,7 @@ export function BrandSidebar({ brandId, brandName, brandColor, logoPath }: Brand
         {logoPath ? (
           <div className="relative h-8 w-8 rounded-lg overflow-hidden border bg-white">
             <Image
-              src={`/api/images/${encodeURIComponent(logoPath)}`}
+              src={getPublicImageUrl(logoPath)}
               alt={brandName}
               fill
               className="object-contain p-0.5"

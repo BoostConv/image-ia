@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Check, X, Loader2, Globe, Sparkles, Target, Eye, MessageSquare, Heart, Users, Upload, Instagram, Facebook, Zap, CheckCircle2, AlertCircle, SkipForward } from "lucide-react";
 import Image from "next/image";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface AutoAnalysisStatus {
   website: "pending" | "running" | "done" | "error" | "skipped";
@@ -292,7 +293,7 @@ export function BrandIdentityEditor({
               {currentLogoPath ? (
                 <div className="relative h-16 w-16 rounded-lg overflow-hidden border">
                   <Image
-                    src={`/api/images/${encodeURIComponent(currentLogoPath)}`}
+                    src={getPublicImageUrl(currentLogoPath)}
                     alt="Logo"
                     fill
                     className="object-contain"

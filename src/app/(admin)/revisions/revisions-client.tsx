@@ -17,6 +17,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { RevisionRequest } from "@/lib/db/queries/revisions";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface RevisionsClientProps {
   pending: RevisionRequest[];
@@ -53,7 +54,7 @@ function BrandHeader({ group }: { group: BrandGroup }) {
       {group.brandLogoPath ? (
         <div className="relative h-8 w-8 rounded-lg overflow-hidden border bg-white">
           <NextImage
-            src={`/api/images/${encodeURIComponent(group.brandLogoPath)}`}
+            src={getPublicImageUrl(group.brandLogoPath)}
             alt={group.brandName}
             fill
             className="object-contain p-0.5"
@@ -163,7 +164,7 @@ export function RevisionsClient({ pending, completed }: RevisionsClientProps) {
                   >
                     <div className="relative h-24 w-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                       <NextImage
-                        src={`/api/images/${encodeURIComponent(revision.imagePath)}`}
+                        src={getPublicImageUrl(revision.imagePath)}
                         alt="Visuel"
                         fill
                         className="object-cover"
@@ -238,7 +239,7 @@ export function RevisionsClient({ pending, completed }: RevisionsClientProps) {
                       >
                         <div className="relative h-20 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                           <NextImage
-                            src={`/api/images/${encodeURIComponent(revision.imagePath)}`}
+                            src={getPublicImageUrl(revision.imagePath)}
                             alt="Visuel"
                             fill
                             className="object-cover"
@@ -282,7 +283,7 @@ export function RevisionsClient({ pending, completed }: RevisionsClientProps) {
               <div className="flex gap-4">
                 <div className="relative h-32 w-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                   <NextImage
-                    src={`/api/images/${encodeURIComponent(regenModal.revision.imagePath)}`}
+                    src={getPublicImageUrl(regenModal.revision.imagePath)}
                     alt="Original"
                     fill
                     className="object-cover"

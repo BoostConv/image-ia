@@ -37,6 +37,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface Brand {
   id: string;
@@ -656,7 +657,7 @@ export function BrandGenerateClient({
                         {thumb ? (
                           <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white border">
                             <img
-                              src={`/api/images/${encodeURIComponent(thumb)}`}
+                              src={getPublicImageUrl(thumb)}
                               alt={product.name}
                               className="h-full w-full object-contain"
                             />
@@ -718,7 +719,7 @@ export function BrandGenerateClient({
                             }`}
                           >
                             <img
-                              src={`/api/images/${encodeURIComponent(imgPath)}`}
+                              src={getPublicImageUrl(imgPath)}
                               alt={`Produit ${i + 1}`}
                               className="h-16 w-16 object-cover"
                             />

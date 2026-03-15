@@ -26,10 +26,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Image from "next/image";
-
-function getImageUrl(relativePath: string): string {
-  return `/api/images/${encodeURIComponent(relativePath)}`;
-}
+import { getPublicImageUrl } from "@/lib/images/url";
 
 interface BrandDocument {
   id: string;
@@ -496,7 +493,7 @@ export function BrandInspirationsClient({
                 }
               >
                 <Image
-                  src={getImageUrl(ad.filePath)}
+                  src={getPublicImageUrl(ad.filePath)}
                   alt={ad.name || "Inspiration"}
                   fill
                   className="object-cover"
