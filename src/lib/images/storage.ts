@@ -1,11 +1,20 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET = "images";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: SupabaseClient | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    }
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 export async function saveImage(
   imageData: Buffer,
@@ -21,7 +30,7 @@ export async function saveImage(
         ? "image/webp"
         : "image/jpeg";
 
-  const { error } = await supabase.storage
+  const { error } = await getSupabase().storage
     .from(BUCKET)
     .upload(storagePath, imageData, {
       contentType,
@@ -39,7 +48,7 @@ export async function readImage(
   relativePath: string
 ): Promise<Buffer | null> {
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await getSupabase().storage
       .from(BUCKET)
       .download(relativePath);
 
@@ -54,15 +63,14 @@ export async function readImage(
 
 export async function deleteImage(relativePath: string): Promise<void> {
   try {
-    await supabase.storage.from(BUCKET).remove([relativePath]);
+    await getSupabase().storage.from(BUCKET).remove([relativePath]);
   } catch {
     // Ignore if file doesn't exist
   }
 }
 
 export function getImageUrl(relativePath: string): string {
-  // Public URL from Supabase Storage
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(relativePath);
+  const { data } = getSupabase().storage.from(BUCKET).getPublicUrl(relativePath);
   return data.publicUrl;
 }
 
