@@ -24,9 +24,28 @@ export interface GeneratedImage {
 
 export interface Concept {
   concept: string;
+  headline: string;
+  cta: string;
   angle: string;
   level: string;
   emotion: string;
+  layout_family: string;
+  format_family: string;
+  render_family: string;
+  ad_job: string;
+  product_role: string;
+  skipped?: boolean;
+}
+
+export interface PromptsDetail {
+  claude_system: string;
+  claude_user: string;
+  gemini: {
+    index: number;
+    system_instruction: string;
+    user_prompt: string;
+    edit_prompt: string;
+  }[];
 }
 
 export interface StartGenerationParams {
@@ -52,11 +71,13 @@ interface GenerationContextValue {
   currentConcept: string;
   brandId: string | null;
   brandName: string | null;
+  promptsDetail: PromptsDetail | null;
 
   // Actions
   startGeneration: (params: StartGenerationParams) => Promise<void>;
   cancelGeneration: () => void;
   clearResults: () => void;
+  skipConcept: (index: number) => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────
@@ -86,6 +107,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
   const [currentConcept, setCurrentConcept] = useState("");
   const [brandId, setBrandId] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string | null>(null);
+  const [promptsDetail, setPromptsDetail] = useState<PromptsDetail | null>(null);
 
   // ── Refs (survive across async operations) ──
   const abortRef = useRef<AbortController | null>(null);
@@ -122,6 +144,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
               break;
             case "concepts":
               setConcepts(event.concepts);
+              break;
+            case "prompts_detail":
+              setPromptsDetail({
+                claude_system: event.claude_system,
+                claude_user: event.claude_user,
+                gemini: event.gemini,
+              });
               break;
             case "progress":
               setProgress({ current: event.current, total: event.total });
@@ -184,6 +213,7 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
         setBatchStats({ completed: 0, failed: 0 });
         setError(null);
         setCurrentConcept("");
+        setPromptsDetail(null);
       }
 
       setIsGenerating(true);
@@ -238,6 +268,13 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     setPhaseMessage("");
   }, []);
 
+  // ── Skip a concept (mark as skipped so pipeline can ignore it) ──
+  const skipConcept = useCallback((index: number) => {
+    setConcepts((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, skipped: true } : c))
+    );
+  }, []);
+
   // ── Clear Results ──
   const clearResults = useCallback(() => {
     setGeneratedImages([]);
@@ -269,9 +306,11 @@ export function GenerationProvider({ children }: { children: ReactNode }) {
     currentConcept,
     brandId,
     brandName,
+    promptsDetail,
     startGeneration,
     cancelGeneration,
     clearResults,
+    skipConcept,
   };
 
   return (

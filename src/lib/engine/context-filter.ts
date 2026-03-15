@@ -88,6 +88,28 @@ ${rawContext}
     if (!parsed.brand_values) parsed.brand_values = [];
 
     // ═══════════════════════════════════════════════════════════
+    // BRAND RULES — Inject AI guardrails by category
+    // ═══════════════════════════════════════════════════════════
+    if (input.brand.brandRules?.rules?.length) {
+      const rules = input.brand.brandRules.rules;
+      const globalRules = rules.filter(r => r.category === "global").map(r => r.text);
+      parsed.brand_rules_copy = [
+        ...rules.filter(r => r.category === "copy").map(r => r.text),
+        ...globalRules,
+      ];
+      parsed.brand_rules_visual = [
+        ...rules.filter(r => r.category === "visual").map(r => r.text),
+        ...globalRules,
+      ];
+      parsed.brand_rules_concept = [
+        ...rules.filter(r => r.category === "concept").map(r => r.text),
+        ...globalRules,
+      ];
+      // Also merge into red_lines for backward compat
+      parsed.red_lines = [...(parsed.red_lines || []), ...globalRules];
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // COUCHE 2 — Enrich with Product Analysis
     // ═══════════════════════════════════════════════════════════
     if (input.product?.analysis) {
@@ -117,6 +139,30 @@ ${rawContext}
       if (pa.valueEquation) {
         parsed.product_value_equation = `Dream: ${pa.valueEquation.dreamOutcome} (score ${pa.valueEquation.score.toFixed(1)}/10)`;
       }
+
+      // DUR Problems — highest pain points with scores
+      if (pa.durProblems?.length) {
+        const sorted = [...pa.durProblems].sort((a, b) => b.totalScore - a.totalScore);
+        parsed.product_dur_problems = sorted
+          .slice(0, 3)
+          .map(d => `[D${d.douloureux}/U${d.urgent}/R${d.reconnu}=${d.totalScore.toFixed(0)}] ${d.description}`)
+          .join(" | ");
+      }
+
+      // Before/After transformations
+      if (pa.beforeAfter?.length) {
+        parsed.product_before_after = pa.beforeAfter
+          .map(ba => `[${ba.dimension}] "${ba.before}" → "${ba.after}" (${ba.timeframe})`)
+          .join(" | ");
+      }
+
+      // Review Insights — emotional quotes from real customers
+      if (pa.reviewInsights?.emotionalQuotes?.length) {
+        parsed.product_review_quotes = pa.reviewInsights.emotionalQuotes
+          .slice(0, 4)
+          .map(q => `"${q}"`)
+          .join(" | ");
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -142,6 +188,17 @@ ${rawContext}
       // Terrain
       if (angle.terrain) {
         parsed.angle_terrain = `${angle.terrain.awareness}, ${angle.terrain.temperature}, emotion=${angle.terrain.dominantEmotion}`;
+      }
+
+      // Visual Direction — mood, color tone, imagery style
+      if (angle.visualDirection) {
+        const vd = angle.visualDirection;
+        const parts: string[] = [];
+        if (vd.mood) parts.push(`mood: ${vd.mood}`);
+        if (vd.colorTone) parts.push(`couleur: ${vd.colorTone}`);
+        if (vd.imageryStyle) parts.push(`style: ${vd.imageryStyle}`);
+        if (vd.modelDirection) parts.push(`direction: ${vd.modelDirection}`);
+        parsed.angle_visual_direction = parts.join(" | ");
       }
     }
 
@@ -179,6 +236,16 @@ ${rawContext}
       // Decision Style
       if (rp.buyingPsychology) {
         parsed.persona_decision_style = `${rp.buyingPsychology.decisionStyle} (risk: ${rp.buyingPsychology.riskTolerance})`;
+
+        // Full buying psychology — defense mechanisms + resistance patterns + trust builders
+        const bp = rp.buyingPsychology;
+        const psyParts: string[] = [];
+        if (bp.primaryDefense) psyParts.push(`Defense: ${bp.primaryDefense}`);
+        if (bp.resistancePatterns?.length) psyParts.push(`Resistances: ${bp.resistancePatterns.join(", ")}`);
+        if (bp.trustBuilders?.length) psyParts.push(`Confiance: ${bp.trustBuilders.join(", ")}`);
+        if (psyParts.length > 0) {
+          parsed.persona_buying_psychology = psyParts.join(" | ");
+        }
       }
     }
 
@@ -270,6 +337,23 @@ function buildRawContextDump(input: RawPipelineInput): string {
     if (ton.redLines?.length) {
       parts.push(`\n⛔ RED LINES (INTERDITS ABSOLUS): ${ton.redLines.join(" | ")}`);
     }
+  }
+
+  // Brand Rules (AI guardrails)
+  if (input.brand.brandRules?.rules?.length) {
+    const rules = input.brand.brandRules.rules;
+    const byCategory = {
+      global: rules.filter(r => r.category === "global"),
+      copy: rules.filter(r => r.category === "copy"),
+      visual: rules.filter(r => r.category === "visual"),
+      concept: rules.filter(r => r.category === "concept"),
+    };
+    const ruleLines: string[] = [];
+    if (byCategory.global.length) ruleLines.push(`Global: ${byCategory.global.map(r => r.text).join(" | ")}`);
+    if (byCategory.copy.length) ruleLines.push(`Copy: ${byCategory.copy.map(r => r.text).join(" | ")}`);
+    if (byCategory.visual.length) ruleLines.push(`Visuel: ${byCategory.visual.map(r => r.text).join(" | ")}`);
+    if (byCategory.concept.length) ruleLines.push(`Concept: ${byCategory.concept.map(r => r.text).join(" | ")}`);
+    parts.push(`\n🛡️ RÈGLES IA MARQUE:\n${ruleLines.join("\n")}`);
   }
 
   // Product

@@ -3,6 +3,7 @@ import type { ConceptSpec, FilteredContext } from "./types";
 import { callClaudeWithRetry } from "../ai/claude-retry";
 import { extractJsonFromResponse } from "@/lib/ai/json-parser";
 import { getCopywritingFrameworkDirective, getAllHeadlineMechanismsDirective } from "./knowledge/copywriting-framework";
+import { smartTruncateHeadline } from "./headline-utils";
 
 // ============================================================
 // STAGE F: COPY EDITOR (lightweight)
@@ -33,7 +34,7 @@ export async function polishCopy(
   const headlineWords = concept.headline.split(/\s+/).length;
 
   // If headline is already within budget and CTA looks good, skip the AI call
-  if (headlineWords <= 7 && concept.cta.length >= 4 && concept.cta.length <= 25) {
+  if (headlineWords <= 10 && concept.cta.length >= 4 && concept.cta.length <= 25) {
     return {
       headline: concept.headline,
       cta: concept.cta,
@@ -56,11 +57,20 @@ ${getCopywritingFrameworkDirective("composer")}
 ${getAllHeadlineMechanismsDirective()}
 
 REGLES STRICTES:
-- Headline: max 7 mots, FRANCAIS, doit arreter le scroll en 1 seconde
+- Headline: max 10 mots, FRANCAIS, doit arreter le scroll en 1 seconde
 - CTA: 2-5 mots, action concrete, JAMAIS "Acheter maintenant" ou "En savoir plus"
 - Preserver le registre emotionnel et le mecanisme du concept original
 - Si la headline originale est deja bonne et dans le budget → la retourner INCHANGEE
 - JAMAIS de tirets longs (—) dans le copy
+
+FILTRES QUALITE (REJETER ET REFORMULER SI):
+- Claim medicale non-prouvée ("guérir", "soigner", "éliminer [maladie]", "diviser par X le temps de...")
+- Statistique inventée (tout chiffre % ou x qui n'est PAS dans le brief)
+- Date spécifique (2024, 2025, 2026...) — la pub doit etre intemporelle
+- Copy generique applicable à n'importe quelle marque ("cette decouverte a change ma vie")
+- Promesse trop forte sans preuve ("doubler votre endurance", "resultats en X jours")
+- Ton INCOHERENT avec la marque (agressif pour une marque bienveillante, etc.)
+${context.brand_rules_copy?.length ? `\n⛔ RÈGLES COPY MARQUE (RESPECTER ABSOLUMENT):\n${context.brand_rules_copy.map(r => `- ${r}`).join("\n")}` : ""}
 
 Reponds UNIQUEMENT en JSON valide.`,
       messages: [
@@ -79,10 +89,12 @@ CONTEXTE:
 - Tension: ${context.audience_tension}
 - Ad Job: ${concept.ad_job}
 - Marketing Lever: ${concept.marketing_lever}
+- Ton de marque: ${context.brand_visual_code?.visual_tone || "non défini"}
+${context.red_lines?.length ? `- Red lines: ${context.red_lines.join(", ")}` : ""}
 
 === FORMAT JSON ===
 {
-  "headline": "headline reformulee (max 7 mots)",
+  "headline": "headline reformulee (max 10 mots)",
   "cta": "CTA 2-5 mots",
   "subtitle": "sous-texte optionnel (15-25 mots) ou null",
   "proof": "texte preuve ou null"
@@ -94,9 +106,9 @@ CONTEXTE:
 
   const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
-    // Fallback: truncate manually
+    // Fallback: smart truncate
     return {
-      headline: concept.headline.split(/\s+/).slice(0, 7).join(" "),
+      headline: smartTruncateHeadline(concept.headline, 10),
       cta: concept.cta,
       proof: concept.proof_text || undefined,
     };
@@ -107,11 +119,8 @@ CONTEXTE:
   try {
     const polished = JSON.parse(jsonStr.trim()) as PolishedCopy;
 
-    // Safety: enforce max 7 words even after AI
-    const words = polished.headline.split(/\s+/);
-    if (words.length > 7) {
-      polished.headline = words.slice(0, 7).join(" ");
-    }
+    // Safety: enforce max 10 words even after AI — smart truncation avoids mid-phrase cuts
+    polished.headline = smartTruncateHeadline(polished.headline, 10);
 
     // Ensure CTA is present
     if (!polished.cta || polished.cta.length < 2) {
@@ -130,7 +139,7 @@ CONTEXTE:
   } catch {
     // Fallback on parse error
     return {
-      headline: concept.headline.split(/\s+/).slice(0, 7).join(" "),
+      headline: smartTruncateHeadline(concept.headline, 10),
       cta: concept.cta,
       proof: concept.proof_text || undefined,
     };

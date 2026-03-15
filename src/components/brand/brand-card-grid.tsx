@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import Image from "next/image";
 import { Palette, Images, CheckCircle, XCircle, Trash2 } from "lucide-react";
 
 interface BrandWithStats {
   id: string;
   name: string;
   description: string | null;
+  logoPath: string | null;
   websiteUrl: string | null;
   colorPalette: { primary: string; secondary: string; accent: string } | null;
   stats: { total: number; approved: number; rejected: number };
@@ -53,7 +55,17 @@ export function BrandCardGrid({ brands }: { brands: BrandWithStats[] }) {
             <Card className="transition-all hover:shadow-md hover:border-primary/30 cursor-pointer h-full">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  {brand.colorPalette ? (
+                  {brand.logoPath ? (
+                    <div className="relative h-10 w-10 rounded-lg overflow-hidden border bg-white">
+                      <Image
+                        src={`/api/images/${encodeURIComponent(brand.logoPath)}`}
+                        alt={brand.name}
+                        fill
+                        className="object-contain p-0.5"
+                        sizes="40px"
+                      />
+                    </div>
+                  ) : brand.colorPalette ? (
                     <div
                       className="flex h-10 w-10 items-center justify-center rounded-lg"
                       style={{ backgroundColor: brand.colorPalette.primary }}

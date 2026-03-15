@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import { selectLayout, selectLayoutByFamily, getFallbackTemplate } from "./layout-templates";
 import { TEXT_ON_IMAGE_RULES } from "./knowledge";
+import { smartTruncateHeadline } from "./headline-utils";
 import type { ConceptSpec } from "./types";
 
 // ============================================================
@@ -87,13 +88,9 @@ export function deriveCopyAssetsV3(
   concept: ConceptSpec,
   context: FilteredContext
 ): CopyAssets {
-  // Enforce max 7 words for headline on image
+  // Enforce max words for headline on image — smart truncation avoids mid-phrase cuts
   const maxWords = TEXT_ON_IMAGE_RULES.maxHeadlineWords;
-  let headline = concept.headline;
-  const words = headline.split(/\s+/);
-  if (words.length > maxWords) {
-    headline = words.slice(0, maxWords).join(" ");
-  }
+  let headline = smartTruncateHeadline(concept.headline, maxWords);
 
   // Build proof text based on proof mechanism
   let proof: string | undefined = concept.proof_text;

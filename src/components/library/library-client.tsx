@@ -16,7 +16,17 @@ import {
   X,
   Copy,
   FileText,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  Pencil,
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  Sparkles,
 } from "lucide-react";
+import { ReviewButtons, type ReviewVerdict } from "@/components/reviews/review-buttons";
+import { ReviewModal } from "@/components/reviews/review-modal";
 
 interface LibraryImage {
   id: string;
@@ -29,6 +39,11 @@ interface LibraryImage {
     overall: number;
   } | null;
   compiledPrompt: string | null;
+  lastVerdict: string | null;
+  geminiSystemInstruction: string | null;
+  geminiEditPrompt: string | null;
+  claudeSystemPrompt: string | null;
+  claudeUserPrompt: string | null;
 }
 
 interface LibraryClientProps {
@@ -37,18 +52,38 @@ interface LibraryClientProps {
   images: LibraryImage[];
 }
 
-export function LibraryClient({ brandId, brandName, images }: LibraryClientProps) {
+const verdictBadgeConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
+  approved: { label: "Valide", className: "bg-green-500", icon: CheckCircle2 },
+  rejected: { label: "Refuse", className: "bg-red-500", icon: XCircle },
+  revision: { label: "Correction", className: "bg-amber-500", icon: Pencil },
+  variant: { label: "Variant", className: "bg-blue-500", icon: Copy },
+};
+
+export function LibraryClient({ brandId, brandName, images: initialImages }: LibraryClientProps) {
+  const [images, setImages] = useState(initialImages);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [isCreatingGallery, setIsCreatingGallery] = useState(false);
   const [galleryLink, setGalleryLink] = useState<string | null>(null);
+  const [expandedPromptSection, setExpandedPromptSection] = useState<string | null>(null);
   const [galleryName, setGalleryName] = useState("");
   const [showGalleryForm, setShowGalleryForm] = useState(false);
   const [detailImage, setDetailImage] = useState<LibraryImage | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  // Review state
+  const [reviewModal, setReviewModal] = useState<{ open: boolean; verdict: ReviewVerdict | null }>({
+    open: false,
+    verdict: null,
+  });
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  // Track local verdict overrides
+  const [localVerdicts, setLocalVerdicts] = useState<Map<string, string>>(new Map());
 
   const toggleSelect = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    setConfirmDelete(false);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -120,6 +155,40 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
     }
   }, [selectedIds, brandId, galleryName]);
 
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const deletePromises = Array.from(selectedIds).map((id) =>
+        fetch(`/api/images/${id}`, { method: "DELETE" })
+      );
+      await Promise.all(deletePromises);
+      setImages((prev) => prev.filter((img) => !selectedIds.has(img.id)));
+      setSelectedIds(new Set());
+      setConfirmDelete(false);
+    } catch {
+      // silently fail
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [selectedIds, confirmDelete]);
+
+  const handleDeleteSingle = useCallback(async (imageId: string) => {
+    try {
+      const res = await fetch(`/api/images/${imageId}`, { method: "DELETE" });
+      if (res.ok) {
+        setImages((prev) => prev.filter((img) => img.id !== imageId));
+        setDetailImage(null);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   const copyLink = () => {
     if (galleryLink) {
       navigator.clipboard.writeText(galleryLink);
@@ -130,6 +199,84 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
     navigator.clipboard.writeText(prompt);
     setCopiedPrompt(true);
     setTimeout(() => setCopiedPrompt(false), 2000);
+  };
+
+  const handleReviewClick = (verdict: ReviewVerdict) => {
+    setReviewModal({ open: true, verdict });
+  };
+
+  const handleReviewSubmit = useCallback(async (comment: string) => {
+    if (!detailImage || !reviewModal.verdict) return;
+    setReviewSubmitting(true);
+    try {
+      // 1. Create review
+      const reviewRes = await fetch(`/api/images/${detailImage.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          verdict: reviewModal.verdict,
+          comment: comment || undefined,
+        }),
+      });
+
+      if (!reviewRes.ok) return;
+      const { id: reviewId } = await reviewRes.json();
+
+      // 2. Trigger regeneration or variant if needed
+      if (reviewModal.verdict === "revision" && comment) {
+        await fetch(`/api/images/${detailImage.id}/regenerate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brief: comment, reviewId }),
+        });
+      } else if (reviewModal.verdict === "variant" && comment) {
+        await fetch(`/api/images/${detailImage.id}/variant`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brief: comment, reviewId }),
+        });
+      }
+
+      // 3. Update local state
+      setLocalVerdicts((prev) => new Map(prev).set(detailImage.id, reviewModal.verdict!));
+
+      // Update image status locally
+      if (reviewModal.verdict !== "variant") {
+        const statusMap: Record<string, string> = {
+          approved: "approved",
+          rejected: "rejected",
+          revision: "pending",
+        };
+        const newStatus = statusMap[reviewModal.verdict] || "pending";
+        setImages((prev) =>
+          prev.map((img) =>
+            img.id === detailImage.id ? { ...img, status: newStatus, lastVerdict: reviewModal.verdict } : img
+          )
+        );
+        setDetailImage((prev) =>
+          prev ? { ...prev, status: newStatus, lastVerdict: reviewModal.verdict } : null
+        );
+      } else {
+        setImages((prev) =>
+          prev.map((img) =>
+            img.id === detailImage.id ? { ...img, lastVerdict: reviewModal.verdict } : img
+          )
+        );
+        setDetailImage((prev) =>
+          prev ? { ...prev, lastVerdict: reviewModal.verdict } : null
+        );
+      }
+
+      setReviewModal({ open: false, verdict: null });
+    } catch {
+      // silently fail
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [detailImage, reviewModal.verdict]);
+
+  const getImageVerdict = (img: LibraryImage): string | null => {
+    return localVerdicts.get(img.id) || img.lastVerdict;
   };
 
   return (
@@ -170,6 +317,23 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
             >
               <Share2 className="mr-1.5 h-3.5 w-3.5" />
               Creer galerie
+            </Button>
+
+            <Button
+              variant={confirmDelete ? "destructive" : "outline"}
+              size="sm"
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              className="text-xs"
+            >
+              {isDeleting ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {confirmDelete
+                ? `Confirmer (${selectedIds.size})`
+                : `Supprimer (${selectedIds.size})`}
             </Button>
           </>
         )}
@@ -230,6 +394,8 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
         {images.map((img) => {
           const isSelected = selectedIds.has(img.id);
+          const verdict = getImageVerdict(img);
+          const vConfig = verdict ? verdictBadgeConfig[verdict] : null;
           return (
             <Card
               key={img.id}
@@ -261,8 +427,14 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                     <Square className="h-4 w-4" />
                   )}
                 </div>
-                {/* Score badge */}
-                {img.scoreData?.overall && (
+                {/* Verdict badge on card */}
+                {vConfig && (
+                  <div className={`absolute top-2 right-2 rounded-full p-1 ${vConfig.className}`}>
+                    <vConfig.icon className="h-3.5 w-3.5 text-white" />
+                  </div>
+                )}
+                {/* Score badge (only if no verdict badge) */}
+                {!vConfig && img.scoreData?.overall && (
                   <div className={`absolute top-2 right-2 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
                     img.scoreData.overall >= 7 ? "bg-green-500 text-white" :
                     img.scoreData.overall >= 4 ? "bg-amber-500 text-white" :
@@ -396,6 +568,17 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                 </p>
               </div>
 
+              {/* Review buttons */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Review
+                </label>
+                <ReviewButtons
+                  existingVerdict={getImageVerdict(detailImage)}
+                  onReview={handleReviewClick}
+                />
+              </div>
+
               {/* Tags */}
               {detailImage.tags && detailImage.tags.length > 0 && (
                 <div className="space-y-1.5">
@@ -410,33 +593,116 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                 </div>
               )}
 
-              {/* Prompt */}
-              {detailImage.compiledPrompt && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      Prompt utilise
-                    </label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      onClick={() => copyPrompt(detailImage.compiledPrompt!)}
-                    >
-                      {copiedPrompt ? (
-                        <Check className="h-3 w-3 mr-1 text-green-500" />
-                      ) : (
-                        <Copy className="h-3 w-3 mr-1" />
+              {/* Prompts */}
+              {(detailImage.compiledPrompt || detailImage.claudeSystemPrompt) && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    Prompts
+                  </label>
+
+                  {/* Gemini User Prompt (brief creatif) */}
+                  {detailImage.compiledPrompt && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedPromptSection(expandedPromptSection === "gemini_user" ? null : "gemini_user")}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400 w-full text-left"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Gemini — Brief creatif
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 px-1.5 text-[9px] ml-auto"
+                          onClick={(e) => { e.stopPropagation(); copyPrompt(detailImage.compiledPrompt!); }}
+                        >
+                          {copiedPrompt ? <Check className="h-2.5 w-2.5 text-green-500" /> : <Copy className="h-2.5 w-2.5" />}
+                        </Button>
+                        {expandedPromptSection === "gemini_user" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+                      {expandedPromptSection === "gemini_user" && (
+                        <pre className="mt-1 p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 max-h-[250px] overflow-y-auto whitespace-pre-wrap break-words">
+                          {detailImage.compiledPrompt}
+                        </pre>
                       )}
-                      {copiedPrompt ? "Copie !" : "Copier"}
-                    </Button>
-                  </div>
-                  <div className="rounded-lg border bg-muted/50 p-3">
-                    <p className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words">
-                      {detailImage.compiledPrompt}
-                    </p>
-                  </div>
+                    </div>
+                  )}
+
+                  {/* Gemini System Instruction */}
+                  {detailImage.geminiSystemInstruction && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedPromptSection(expandedPromptSection === "gemini_sys" ? null : "gemini_sys")}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400 w-full text-left"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Gemini — System Instruction
+                        {expandedPromptSection === "gemini_sys" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                      </button>
+                      {expandedPromptSection === "gemini_sys" && (
+                        <pre className="mt-1 p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 max-h-[250px] overflow-y-auto whitespace-pre-wrap break-words">
+                          {detailImage.geminiSystemInstruction}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Gemini Pass 2 Edit */}
+                  {detailImage.geminiEditPrompt && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedPromptSection(expandedPromptSection === "gemini_edit" ? null : "gemini_edit")}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400 w-full text-left"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Gemini — Pass 2 (edit)
+                        {expandedPromptSection === "gemini_edit" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                      </button>
+                      {expandedPromptSection === "gemini_edit" && (
+                        <pre className="mt-1 p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words">
+                          {detailImage.geminiEditPrompt}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Claude System Prompt */}
+                  {detailImage.claudeSystemPrompt && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedPromptSection(expandedPromptSection === "claude_sys" ? null : "claude_sys")}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-700 dark:text-purple-400 w-full text-left"
+                      >
+                        <Brain className="h-3 w-3" />
+                        Claude — System Prompt
+                        {expandedPromptSection === "claude_sys" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                      </button>
+                      {expandedPromptSection === "claude_sys" && (
+                        <pre className="mt-1 p-2.5 bg-purple-50 dark:bg-purple-950/30 rounded-lg text-[10px] leading-relaxed text-purple-900 dark:text-purple-200 max-h-[250px] overflow-y-auto whitespace-pre-wrap break-words">
+                          {detailImage.claudeSystemPrompt}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Claude User Prompt */}
+                  {detailImage.claudeUserPrompt && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedPromptSection(expandedPromptSection === "claude_user" ? null : "claude_user")}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-purple-700 dark:text-purple-400 w-full text-left"
+                      >
+                        <Brain className="h-3 w-3" />
+                        Claude — User Prompt
+                        {expandedPromptSection === "claude_user" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                      </button>
+                      {expandedPromptSection === "claude_user" && (
+                        <pre className="mt-1 p-2.5 bg-purple-50 dark:bg-purple-950/30 rounded-lg text-[10px] leading-relaxed text-purple-900 dark:text-purple-200 max-h-[250px] overflow-y-auto whitespace-pre-wrap break-words">
+                          {detailImage.claudeUserPrompt}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -456,10 +722,33 @@ export function LibraryClient({ brandId, brandName, images }: LibraryClientProps
                   <Download className="h-3 w-3 mr-1.5" />
                   Telecharger
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => {
+                    if (confirm("Supprimer ce visuel ?")) {
+                      handleDeleteSingle(detailImage.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3 w-3 mr-1.5" />
+                  Supprimer
+                </Button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewModal.open && reviewModal.verdict && (
+        <ReviewModal
+          verdict={reviewModal.verdict}
+          onConfirm={handleReviewSubmit}
+          onCancel={() => setReviewModal({ open: false, verdict: null })}
+          submitting={reviewSubmitting}
+        />
       )}
     </div>
   );

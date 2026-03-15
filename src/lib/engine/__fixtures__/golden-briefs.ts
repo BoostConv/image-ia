@@ -119,7 +119,7 @@ export const GOLDEN_CONCEPT_1: ConceptSpec = {
   proof_text: undefined,
 
   // Visual direction
-  layout_family: "center_hero_top_claim",
+  layout_family: "hero_image",
   render_family: "photo_led",
   rupture_structure: "frozen_explosion",
   graphic_tension: "radial_focus",
@@ -171,7 +171,7 @@ export const GOLDEN_CONCEPT_2: ConceptSpec = {
   proof_mechanism: "ingredient",
   proof_text: "100% bio · 0 colorant artificiel",
 
-  layout_family: "macro_with_side_copy",
+  layout_family: "macro_detail",
   render_family: "hybrid",
   rupture_structure: "macro_texture",
   graphic_tension: "framing_in_frame",
@@ -265,7 +265,7 @@ export const GOLDEN_CONCEPT_4: ConceptSpec = {
   proof_mechanism: "social_proof",
   proof_text: "12 847 familles conquises",
 
-  layout_family: "left_copy_right_product",
+  layout_family: "negative_space",
   render_family: "photo_led",
   rupture_structure: "visual_humor",
   graphic_tension: "spotlight",
@@ -312,7 +312,7 @@ export const GOLDEN_CONCEPT_5: ConceptSpec = {
   proof_mechanism: "offer",
   proof_text: "-25% avec le code REBELLE25",
 
-  layout_family: "hero_with_bottom_offer",
+  layout_family: "product_focus",
   render_family: "design_led",
   rupture_structure: "radical_minimalism",
   graphic_tension: "negative_space_block",

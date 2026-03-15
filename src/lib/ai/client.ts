@@ -19,9 +19,11 @@ async function sleep(ms: number) {
 
 export async function generateImage(params: {
   prompt: string;
+  systemInstruction?: string;
   aspectRatio?: AspectRatio;
   referenceImage?: Buffer;
   referenceImages?: Buffer[];
+  referenceImageRoles?: string[];
   temperature?: number;
 }): Promise<GenerationResult> {
   const apiKey = getApiKey();
@@ -30,17 +32,28 @@ export async function generateImage(params: {
     { text: string } | { inline_data: { mime_type: string; data: string } }
   > = [];
 
-  // Add all reference images (multi-ref support)
+  // Add all reference images WITH role annotations
   if (params.referenceImages && params.referenceImages.length > 0) {
-    for (const ref of params.referenceImages) {
+    const roles = params.referenceImageRoles || [];
+    for (let i = 0; i < params.referenceImages.length; i++) {
+      const role = roles[i] || "reference";
+      const roleLabel = role === "product_fidelity"
+        ? "PHOTO DU VRAI PRODUIT — reproduire ce packaging à l'IDENTIQUE (forme, couleurs, étiquette, logo). NE JAMAIS modifier, recolorer ou inventer."
+        : role === "layout_structure"
+        ? "INSPIRATION DE COMPOSITION — reproduire cette structure de mise en page, PAS le contenu."
+        : role === "brand_style"
+        ? "RÉFÉRENCE DE STYLE MARQUE — reproduire ce style visuel et cette direction artistique."
+        : "Image de référence.";
+      parts.push({ text: `[IMAGE ${i + 1}: ${roleLabel}]` });
       parts.push({
         inline_data: {
           mime_type: "image/png",
-          data: ref.toString("base64"),
+          data: params.referenceImages[i].toString("base64"),
         },
       });
     }
   } else if (params.referenceImage) {
+    parts.push({ text: "[IMAGE PRODUIT — reproduire ce packaging à l'IDENTIQUE]" });
     parts.push({
       inline_data: {
         mime_type: "image/png",
@@ -60,10 +73,17 @@ export async function generateImage(params: {
     temperature: params.temperature ?? 1,
   };
 
-  const body = {
+  const body: Record<string, unknown> = {
     contents: [{ parts }],
     generationConfig,
   };
+
+  // System instruction — persistent brand identity & rules (higher weight than user prompt)
+  if (params.systemInstruction) {
+    body.systemInstruction = {
+      parts: [{ text: params.systemInstruction }],
+    };
+  }
 
   let lastError: Error | null = null;
 

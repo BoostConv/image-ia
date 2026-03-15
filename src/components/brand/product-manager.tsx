@@ -409,11 +409,24 @@ export function ProductManager({
           <CardContent className="py-3 space-y-2">
             <div className="flex items-start justify-between">
               <div
-                className="flex-1 cursor-pointer"
+                className="flex-1 cursor-pointer flex items-start gap-3"
                 onClick={() =>
                   setExpandedId(expandedId === product.id ? null : product.id)
                 }
               >
+                {/* Product thumbnail in collapsed view */}
+                {expandedId !== product.id && product.imagePaths?.[0] && (
+                  <div className="relative h-20 w-20 rounded-lg overflow-hidden border bg-white shrink-0">
+                    <Image
+                      src={getImageUrl(product.imagePaths[0])}
+                      alt={product.name}
+                      fill
+                      className="object-contain"
+                      sizes="80px"
+                    />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium text-sm">{product.name}</h3>
                   {product.category && (
@@ -430,6 +443,7 @@ export function ProductManager({
                 {product.usp && (
                   <p className="text-xs text-muted-foreground mt-0.5">{product.usp}</p>
                 )}
+                </div>
               </div>
               <div className="flex gap-0.5 shrink-0">
                 {expandedId === product.id && editingId !== product.id && (
@@ -483,6 +497,19 @@ export function ProductManager({
             {/* Expanded view */}
             {expandedId === product.id && editingId !== product.id && (
               <div className="border-t pt-3 space-y-3">
+                {/* Hero image + thumbnails */}
+                {product.imagePaths && product.imagePaths.length > 0 && (
+                  <div className="relative h-40 w-full rounded-lg overflow-hidden border bg-white">
+                    <Image
+                      src={getImageUrl(product.imagePaths[0])}
+                      alt={product.name}
+                      fill
+                      className="object-contain"
+                      sizes="(max-width: 768px) 100vw, 600px"
+                    />
+                  </div>
+                )}
+
                 {/* Reference images */}
                 <div className="space-y-2">
                   <label className="text-xs font-medium">Images de reference</label>

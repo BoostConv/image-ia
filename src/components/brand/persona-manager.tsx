@@ -399,7 +399,7 @@ export function PersonaManager({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Definissez vos personas avec un maximum de details pour des ads ultra-ciblees
+        Personas psychographiques par archetype — on cible une psychologie, pas un age
       </p>
 
       {/* Add persona form */}
@@ -412,7 +412,7 @@ export function PersonaManager({
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Marie la sportive, Thomas le geek..."
+                  placeholder="Ex: Le Sportif du dimanche, L'Eco-consciente exigeante..."
                 />
               </div>
               <div className="space-y-1">

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Visual Intelligence Studio",
-  description: "Outil de generation d'images IA — Boost Conversion",
+  title: "Boost IA Static",
+  description: "Generateur d'images publicitaires propulse par l'IA",
 };
 
 export default function RootLayout({

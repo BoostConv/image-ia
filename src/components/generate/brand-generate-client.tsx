@@ -34,6 +34,8 @@ import {
   Upload,
   X,
   Plus,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface Brand {
@@ -91,6 +93,40 @@ interface BrandGenerateClientProps {
 
 const BATCH_COUNTS = [1, 3, 5, 10, 15, 20, 30, 50];
 
+const LAYOUT_LABEL_MAP: Record<string, string> = {
+  story_sequence: "Story Sequence",
+  listicle: "Listicle",
+  annotation_callout: "Annotation",
+  flowchart: "Flowchart",
+  hero_image: "Hero Image",
+  product_focus: "Product Focus",
+  product_in_context: "In Context",
+  probleme_zoome: "Probleme Zoome",
+  golden_hour: "Golden Hour",
+  macro_detail: "Macro Detail",
+  action_shot: "Action Shot",
+  ingredient_showcase: "Ingredients",
+  scale_shot: "Scale Shot",
+  destruction_shot: "Destruction",
+  texture_fill: "Texture Fill",
+  negative_space: "Negative Space",
+  testimonial_card: "Testimonial",
+  ugc_style: "UGC Style",
+  press_as_seen_in: "Press / Vu dans",
+  wall_of_love: "Wall of Love",
+  statistique_data_point: "Data Point",
+  tweet_post_screenshot: "Tweet / Post",
+  split_screen: "Split Screen",
+  timeline_compare: "Timeline",
+  avant_apres: "Avant / Apres",
+  text_heavy: "Text Heavy",
+  single_word: "Single Word",
+  fill_the_blank: "Fill the Blank",
+  two_truths: "Two Truths",
+  manifesto: "Manifesto",
+  quote_card: "Quote Card",
+};
+
 type GenerationMode = "visual" | "ad" | "custom";
 
 export function BrandGenerateClient({
@@ -113,9 +149,11 @@ export function BrandGenerateClient({
     generatedImages,
     concepts,
     currentConcept,
+    promptsDetail,
     startGeneration,
     cancelGeneration,
     clearResults,
+    skipConcept,
   } = useGeneration();
 
   // Local UI state
@@ -128,6 +166,20 @@ export function BrandGenerateClient({
   const [multiFormatMode, setMultiFormatMode] = useState(false);
   const [brief, setBrief] = useState("");
   const [batchCount, setBatchCount] = useState(5);
+  const [creativityLevel, setCreativityLevel] = useState<1 | 2 | 3>(2);
+  const [promptMode, setPromptMode] = useState<"standard" | "lean">("standard");
+  const [showPrompts, setShowPrompts] = useState(false);
+  const [expandedPromptSection, setExpandedPromptSection] = useState<string | null>(null);
+
+  // Layout inspiration picker
+  const [selectedLayoutFamilies, setSelectedLayoutFamilies] = useState<Set<string>>(new Set());
+  const [layoutFamilies, setLayoutFamilies] = useState<Array<{
+    family: string;
+    thumbnailId: string;
+    count: number;
+  }>>([]);
+  const [layoutsExpanded, setLayoutsExpanded] = useState(false);
+  const [layoutsLoaded, setLayoutsLoaded] = useState(false);
 
   // Reference images (standard mode)
   const [selectedRefPaths, setSelectedRefPaths] = useState<Set<string>>(new Set());
@@ -181,6 +233,31 @@ export function BrandGenerateClient({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useState(() => { loadTemplates(); });
+
+  // Load layout families on first expand
+  const loadLayoutFamilies = useCallback(async () => {
+    if (layoutsLoaded) return;
+    try {
+      const res = await fetch("/api/layout-inspirations/grouped");
+      if (res.ok) {
+        const data = await res.json();
+        setLayoutFamilies(data);
+        setLayoutsLoaded(true);
+      }
+    } catch { /* ignore */ }
+  }, [layoutsLoaded]);
+
+  const handleToggleLayout = useCallback((family: string) => {
+    setSelectedLayoutFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(family)) {
+        next.delete(family);
+      } else {
+        next.add(family);
+      }
+      return next;
+    });
+  }, []);
 
   const handleSaveTemplate = useCallback(async () => {
     if (!templateName.trim()) return;
@@ -363,6 +440,9 @@ export function BrandGenerateClient({
           count: batchCount,
           renderStrategy: mode === "ad" ? "complete_ad" : "clean",
           selectedImagePaths: selectedRefPaths.size > 0 ? Array.from(selectedRefPaths) : undefined,
+          forcedLayoutFamilies: selectedLayoutFamilies.size > 0 ? Array.from(selectedLayoutFamilies) : undefined,
+          creativityLevel,
+          promptMode,
         },
         brandId: brand.id,
         brandName: brand.name,
@@ -370,7 +450,7 @@ export function BrandGenerateClient({
         appendMode: i > 0, // Don't clear images between multi-format iterations
       });
     }
-  }, [brand.id, brand.name, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds, customPrompts, customRefImages, selectedRefPaths, startGeneration]);
+  }, [brand.id, brand.name, selectedProductId, selectedPersonaId, brief, selectedFormatId, selectedFormat, batchCount, mode, multiFormatMode, selectedFormatIds, customPrompts, customRefImages, selectedRefPaths, selectedLayoutFamilies, creativityLevel, promptMode, startGeneration]);
 
   function handleCancel() {
     cancelGeneration();
@@ -555,28 +635,52 @@ export function BrandGenerateClient({
           <>
             {/* ─── STANDARD MODE CONTROLS ───────────────────────── */}
 
-            {/* Product selector */}
+            {/* Product selector — visual grid */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Produit</label>
               {localProducts.length > 0 ? (
-                <Select
-                  value={selectedProductId}
-                  onValueChange={handleProductChange}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selectionner un produit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {localProducts.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
-                        {product.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-2 gap-2">
+                  {localProducts.map((product) => {
+                    const isSelected = selectedProductId === product.id;
+                    const thumb = product.imagePaths?.[0];
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => handleProductChange(isSelected ? "" : product.id)}
+                        className={`relative flex flex-col items-center gap-1.5 rounded-lg border-2 p-2 text-left transition-all ${
+                          isSelected
+                            ? "border-primary ring-2 ring-primary/30 bg-primary/5"
+                            : "border-border hover:border-muted-foreground/30"
+                        }`}
+                      >
+                        {thumb ? (
+                          <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white border">
+                            <img
+                              src={`/api/images/${encodeURIComponent(thumb)}`}
+                              alt={product.name}
+                              className="h-full w-full object-contain"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+                            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                        <span className="text-xs font-medium text-center line-clamp-2 w-full">
+                          {product.name}
+                        </span>
+                        {isSelected && (
+                          <div className="absolute top-1 right-1">
+                            <CheckCircle2 className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
                 <a
-                  href={`/brands/${brand.id}/settings`}
+                  href={`/brands/${brand.id}/products`}
                   className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
                 >
                   + Ajouter un produit
@@ -681,11 +785,122 @@ export function BrandGenerateClient({
                 </Select>
               ) : (
                 <a
-                  href={`/brands/${brand.id}/settings`}
+                  href={`/brands/${brand.id}/products`}
                   className="flex items-center gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground hover:border-primary/30 transition-colors"
                 >
                   + Ajouter un persona
                 </a>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Layout inspiration picker */}
+            <div className="space-y-2">
+              <button
+                className="flex items-center justify-between w-full text-left"
+                onClick={() => {
+                  setLayoutsExpanded(!layoutsExpanded);
+                  if (!layoutsLoaded) loadLayoutFamilies();
+                }}
+              >
+                <label className="text-sm font-medium flex items-center gap-1.5 cursor-pointer">
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  Layouts d'inspiration
+                  {selectedLayoutFamilies.size > 0 && (
+                    <Badge variant="default" className="text-[9px] h-4 px-1.5 ml-1">
+                      {selectedLayoutFamilies.size}
+                    </Badge>
+                  )}
+                </label>
+                {layoutsExpanded ? (
+                  <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </button>
+              <p className="text-[10px] text-muted-foreground">
+                {selectedLayoutFamilies.size === 0
+                  ? "Optionnel — l'IA choisira automatiquement"
+                  : `${selectedLayoutFamilies.size} layout(s) impose(s)`}
+              </p>
+
+              {layoutsExpanded && (
+                <div className="space-y-2">
+                  {!layoutsLoaded ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : layoutFamilies.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground py-2">
+                      Aucun layout importe. Allez dans Layouts pour en ajouter.
+                    </p>
+                  ) : (
+                    <>
+                      {/* Selected layouts summary + clear */}
+                      {selectedLayoutFamilies.size > 0 && (
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap gap-1">
+                            {Array.from(selectedLayoutFamilies).map((f) => (
+                              <Badge
+                                key={f}
+                                variant="default"
+                                className="text-[9px] pr-1 cursor-pointer"
+                                onClick={() => handleToggleLayout(f)}
+                              >
+                                {LAYOUT_LABEL_MAP[f] || f}
+                                <X className="h-2.5 w-2.5 ml-0.5" />
+                              </Badge>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => setSelectedLayoutFamilies(new Set())}
+                            className="text-[9px] text-muted-foreground hover:text-foreground"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Visual grid of layouts */}
+                      <div className="grid grid-cols-3 gap-1.5 max-h-[280px] overflow-y-auto pr-1">
+                        {layoutFamilies.map((lf) => {
+                          const isSelected = selectedLayoutFamilies.has(lf.family);
+                          return (
+                            <button
+                              key={lf.family}
+                              onClick={() => handleToggleLayout(lf.family)}
+                              className={`relative group rounded-lg overflow-hidden border-2 transition-all ${
+                                isSelected
+                                  ? "border-primary ring-2 ring-primary/30"
+                                  : "border-border hover:border-muted-foreground/40"
+                              }`}
+                            >
+                              <div className="aspect-square bg-muted relative">
+                                <img
+                                  src={`/api/layout-inspirations/thumbnail/${lf.family}`}
+                                  alt={lf.family}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                                {isSelected && (
+                                  <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                                    <CheckCircle2 className="h-5 w-5 text-primary drop-shadow" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="px-1 py-0.5 bg-background">
+                                <p className="text-[8px] font-medium leading-tight truncate">
+                                  {LAYOUT_LABEL_MAP[lf.family] || lf.family}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
 
@@ -827,6 +1042,67 @@ export function BrandGenerateClient({
               <p className="text-[10px] text-muted-foreground">
                 Cout estime : ~{(batchCount * 0.134).toFixed(2)}$ (images) + Claude
               </p>
+            </div>
+
+            {/* Creativity level */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Niveau de creativite</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { level: 1 as const, label: "Classique", icon: Shield, desc: "Codes prouves" },
+                  { level: 2 as const, label: "Creatif", icon: Sparkles, desc: "Equilibre" },
+                  { level: 3 as const, label: "Experimental", icon: Zap, desc: "Audacieux" },
+                ]).map(({ level, label, icon: Icon, desc }) => (
+                  <button
+                    key={level}
+                    onClick={() => setCreativityLevel(level)}
+                    className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-medium transition-all ${
+                      creativityLevel === level
+                        ? level === 1
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : level === 2
+                          ? "border-purple-500 bg-purple-50 text-purple-700"
+                          : "border-orange-500 bg-orange-50 text-orange-700"
+                        : "border-border text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                    <span className="text-[9px] opacity-60">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Prompt mode */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Mode prompt Gemini</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => setPromptMode("standard")}
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-medium transition-all ${
+                    promptMode === "standard"
+                      ? "border-gray-500 bg-gray-50 text-gray-700"
+                      : "border-border text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Standard
+                  <span className="text-[9px] opacity-60">Prompt detaille</span>
+                </button>
+                <button
+                  onClick={() => setPromptMode("lean")}
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-medium transition-all ${
+                    promptMode === "lean"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                      : "border-border text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  Lean
+                  <span className="text-[9px] opacity-60">Minimal, + creatif</span>
+                </button>
+              </div>
             </div>
 
             <Separator />
@@ -1014,47 +1290,201 @@ export function BrandGenerateClient({
             <CardHeader className="py-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Brain className="h-4 w-4" />
-                Concepts generes par Claude ({concepts.length})
+                Concepts generes par Claude ({concepts.filter(c => !c.skipped).length}/{concepts.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {concepts.map((c, i) => (
-                <div
-                  key={i}
-                  className={`flex items-start gap-2 rounded-md border p-2.5 text-xs ${
-                    progress.current > i
-                      ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20"
-                      : progress.current === i
-                        ? "border-primary/30 bg-primary/5"
-                        : "border-muted"
-                  }`}
-                >
-                  <span className="shrink-0 mt-0.5">
-                    {progress.current > i ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                    ) : progress.current === i ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                    ) : (
-                      <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                    )}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium">{c.concept}</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <Badge variant="outline" className="text-[9px] px-1 py-0">
-                        {c.angle}
-                      </Badge>
-                      <Badge variant="outline" className="text-[9px] px-1 py-0">
-                        {c.level}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                        {c.emotion}
-                      </Badge>
+              {concepts.map((c, i) => {
+                const isCompleted = progress.current > i;
+                const isActive = progress.current === i;
+                const isPending = progress.current < i;
+                const isSkipped = c.skipped;
+                const canSkip = isPending && !isSkipped && isGenerating;
+
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-lg border text-xs transition-all ${
+                      isSkipped
+                        ? "border-muted bg-muted/30 opacity-50"
+                        : isCompleted
+                          ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20"
+                          : isActive
+                            ? "border-primary/30 bg-primary/5"
+                            : "border-muted"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 p-2.5">
+                      {/* Layout reference thumbnail */}
+                      {c.layout_family && (
+                        <div className="shrink-0 w-12 h-15 rounded overflow-hidden bg-muted ring-1 ring-foreground/5">
+                          <img
+                            src={`/api/layout-inspirations/thumbnail/${c.layout_family}`}
+                            alt={c.layout_family}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Status icon */}
+                      <span className="shrink-0 mt-0.5">
+                        {isSkipped ? (
+                          <X className="h-3.5 w-3.5 text-muted-foreground" />
+                        ) : isCompleted ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                        ) : isActive ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        ) : (
+                          <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </span>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Headline */}
+                        {c.headline && !isSkipped && (
+                          <p className="font-semibold text-[11px] mb-0.5 leading-tight">
+                            &ldquo;{c.headline}&rdquo;
+                          </p>
+                        )}
+                        {/* Visual device description */}
+                        <p className={`${isSkipped ? "line-through" : ""} text-muted-foreground leading-snug`}>
+                          {c.concept}
+                        </p>
+                        {/* Taxonomy badges */}
+                        {!isSkipped && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {c.layout_family && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-mono">
+                                {c.layout_family}
+                              </Badge>
+                            )}
+                            {c.format_family && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                                {c.format_family}
+                              </Badge>
+                            )}
+                            {c.render_family && (
+                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                                {c.render_family}
+                              </Badge>
+                            )}
+                            {c.ad_job && (
+                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                                {c.ad_job}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Skip button */}
+                      {canSkip && (
+                        <button
+                          onClick={() => skipConcept(i)}
+                          className="shrink-0 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          title="Passer ce concept"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
+          </Card>
+        )}
+
+        {/* Prompts detail panel */}
+        {promptsDetail && (
+          <Card>
+            <CardHeader className="py-3 cursor-pointer" onClick={() => setShowPrompts(!showPrompts)}>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Terminal className="h-4 w-4" />
+                Prompts envoyes ({showPrompts ? "masquer" : "afficher"})
+                {showPrompts ? <ChevronUp className="h-3.5 w-3.5 ml-auto" /> : <ChevronDown className="h-3.5 w-3.5 ml-auto" />}
+              </CardTitle>
+            </CardHeader>
+            {showPrompts && (
+              <CardContent className="space-y-3 pt-0">
+                {/* Claude System */}
+                <div>
+                  <button
+                    onClick={() => setExpandedPromptSection(expandedPromptSection === "claude_system" ? null : "claude_system")}
+                    className="flex items-center gap-2 text-xs font-semibold text-purple-700 dark:text-purple-400 w-full text-left"
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    Claude — System Prompt
+                    {expandedPromptSection === "claude_system" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                  </button>
+                  {expandedPromptSection === "claude_system" && (
+                    <pre className="mt-1.5 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg text-[10px] leading-relaxed text-purple-900 dark:text-purple-200 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-words">
+                      {promptsDetail.claude_system}
+                    </pre>
+                  )}
+                </div>
+
+                {/* Claude User */}
+                <div>
+                  <button
+                    onClick={() => setExpandedPromptSection(expandedPromptSection === "claude_user" ? null : "claude_user")}
+                    className="flex items-center gap-2 text-xs font-semibold text-purple-700 dark:text-purple-400 w-full text-left"
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    Claude — User Prompt
+                    {expandedPromptSection === "claude_user" ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                  </button>
+                  {expandedPromptSection === "claude_user" && (
+                    <pre className="mt-1.5 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg text-[10px] leading-relaxed text-purple-900 dark:text-purple-200 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-words">
+                      {promptsDetail.claude_user}
+                    </pre>
+                  )}
+                </div>
+
+                {/* Gemini prompts per concept */}
+                {promptsDetail.gemini.map((g) => (
+                  <div key={g.index}>
+                    <button
+                      onClick={() => setExpandedPromptSection(expandedPromptSection === `gemini_${g.index}` ? null : `gemini_${g.index}`)}
+                      className="flex items-center gap-2 text-xs font-semibold text-blue-700 dark:text-blue-400 w-full text-left"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Gemini — Concept {g.index + 1}
+                      {expandedPromptSection === `gemini_${g.index}` ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+                    </button>
+                    {expandedPromptSection === `gemini_${g.index}` && (
+                      <div className="mt-1.5 space-y-2">
+                        <div>
+                          <p className="text-[9px] font-semibold text-blue-500 uppercase tracking-wider mb-0.5">System Instruction</p>
+                          <pre className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words">
+                            {g.system_instruction}
+                          </pre>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-semibold text-blue-500 uppercase tracking-wider mb-0.5">User Prompt (brief creatif)</p>
+                          <pre className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words">
+                            {g.user_prompt}
+                          </pre>
+                        </div>
+                        {g.edit_prompt && (
+                          <div>
+                            <p className="text-[9px] font-semibold text-blue-500 uppercase tracking-wider mb-0.5">Pass 2 (edit)</p>
+                            <pre className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-[10px] leading-relaxed text-blue-900 dark:text-blue-200 overflow-x-auto max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words">
+                              {g.edit_prompt}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            )}
           </Card>
         )}
 

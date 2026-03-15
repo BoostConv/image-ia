@@ -37,6 +37,23 @@ export interface TonCommunication {
   redLines: string[];          // Ce que la marque ne doit JAMAIS dire
 }
 
+// ─── BRAND RULES (AI guardrails per brand) ────────────────────
+export type BrandRuleCategory = "copy" | "visual" | "concept" | "global";
+
+export interface BrandRule {
+  id: string;        // nanoid
+  text: string;      // La règle en texte libre
+  category: BrandRuleCategory;
+  // copy = ne jamais dire/formuler X
+  // visual = ne jamais montrer X dans l'image
+  // concept = ne jamais proposer ce type d'idée
+  // global = s'applique partout
+}
+
+export interface BrandRules {
+  rules: BrandRule[];
+}
+
 export interface BriefMetadata {
   gaps: Array<{ field: string; reason: string; severity: "warning" | "critical" }>;
   sources: Record<string, string>;
@@ -346,6 +363,21 @@ export interface RichPersona {
   metadata: PersonaMetadata;
 }
 
+export interface AutoAnalysisStatus {
+  website: "pending" | "running" | "done" | "error" | "skipped";
+  instagram: "pending" | "running" | "done" | "error" | "skipped";
+  metaAds: "pending" | "running" | "done" | "error" | "skipped";
+  errors?: Record<string, string>;
+  results?: {
+    colorsFound?: number;
+    fontsFound?: number;
+    imagesDownloaded?: number;
+    adsFound?: number;
+  };
+  startedAt: string;
+  completedAt?: string;
+}
+
 // ============================================================
 // MODULE 1: BRAND BRAIN
 // ============================================================
@@ -433,8 +465,22 @@ export const brands = pgTable("brands", {
 
   briefStatus: text("brief_status").$type<"draft" | "complete" | "incomplete">().default("draft"),
 
+  // Brand Rules — AI guardrails per brand
+  brandRules: jsonb("brand_rules").$type<BrandRules>(),
+
+  // Brand Style Policy — configurable visual style constraints per brand
+  brandStylePolicy: jsonb("brand_style_policy").$type<Record<string, unknown>>(),
+
   // PHASE 5+ — Brand Style Images (visuels de reference pour le style marque)
   brandStyleImages: jsonb("brand_style_images").$type<string[]>(),
+
+  // DA Fingerprint — Claude Vision analysis of brand style images (persisted)
+  daFingerprint: jsonb("da_fingerprint").$type<Record<string, unknown>>(),
+
+  // Auto-analyze sources
+  instagramHandle: text("instagram_handle"),
+  facebookPageUrl: text("facebook_page_url"),
+  autoAnalysisStatus: jsonb("auto_analysis_status").$type<AutoAnalysisStatus>(),
 
   createdAt: text("created_at")
     .default(sql`NOW()`)
@@ -728,6 +774,11 @@ export const generatedImages = pgTable("generated_images", {
     customer_insight?: string;
     learning_hypothesis?: string;
     engine_version?: string;
+    // ── Full prompts for debugging ──
+    gemini_system_instruction?: string;
+    gemini_edit_prompt?: string;
+    claude_system_prompt?: string;
+    claude_user_prompt?: string;
   }>(),
   rankingData: jsonb("ranking_data").$type<Record<string, unknown>>(),
   iterationOf: text("iteration_of"),
@@ -771,6 +822,8 @@ export const reviews = pgTable("reviews", {
   reviewerType: text("reviewer_type").notNull(),
   verdict: text("verdict").notNull(),
   comment: text("comment"),
+  reviewerName: text("reviewer_name"),
+  reviewerEmail: text("reviewer_email"),
   suggestedPromptChange: text("suggested_prompt_change"),
   appliedToGenerationId: text("applied_to_generation_id").references(
     () => generations.id
@@ -838,16 +891,57 @@ export const campaignTemplates = pgTable("campaign_templates", {
 // ============================================================
 
 export type LayoutFamily =
-  | "left_copy_right_product"
-  | "center_hero_top_claim"
+  // Éducatifs
+  | "story_sequence"
+  | "listicle"
+  | "annotation_callout"
+  | "flowchart"
+  // Centrés Image
+  | "hero_image"
+  | "product_focus"
+  | "product_in_context"
+  | "probleme_zoome"
+  | "golden_hour"
+  | "macro_detail"
+  | "action_shot"
+  | "ingredient_showcase"
+  | "scale_shot"
+  | "destruction_shot"
+  | "texture_fill"
+  | "negative_space"
+  // Social Proof
+  | "testimonial_card"
+  | "ugc_style"
+  | "press_as_seen_in"
+  | "wall_of_love"
+  | "statistique_data_point"
+  | "tweet_post_screenshot"
+  // Comparatifs
   | "split_screen"
-  | "card_stack"
-  | "quote_frame"
-  | "badge_cluster"
-  | "vertical_story_stack"
-  | "diagonal_split"
-  | "hero_with_bottom_offer"
-  | "macro_with_side_copy";
+  | "timeline_compare"
+  | "avant_apres"
+  // Centrés Texte
+  | "text_heavy"
+  | "single_word"
+  | "fill_the_blank"
+  | "two_truths"
+  | "manifesto"
+  | "quote_card";
+
+/** Structured analysis of a layout screenshot by Claude Vision */
+export interface LayoutAnalysis {
+  grid_structure: string;       // "2 colonnes: gauche 60% image, droite 40% texte"
+  reading_order: string;        // "F-pattern: headline top → image center-left → CTA bottom-right"
+  text_zones: string[];         // ["top-left: headline bold", "bottom-right: CTA petit"]
+  product_placement: string;    // "centre, 40% du cadre, sur fond uni"
+  visual_hierarchy: string;     // "1. Image produit 2. Headline 3. Sous-texte 4. CTA"
+  negative_space: string;       // "30% droite, fond clair, zone texte"
+  color_strategy: string;       // "fond sombre, texte blanc, accent couleur sur CTA"
+  mood: string;                 // "premium minimaliste" ou "urgence promo"
+  key_elements: string[];       // ["badge promo top-right", "logo bottom-center", "barre séparatrice"]
+  composition_summary: string;  // 2-3 phrases résumant la composition pour un autre concept
+  strategic_intent: string;     // "Cette structure force l'oeil vers le produit → ideal pour scroll_stop / product_focus"
+}
 
 export const layoutInspirations = pgTable("layout_inspirations", {
   id: text("id").primaryKey(),
@@ -859,6 +953,7 @@ export const layoutInspirations = pgTable("layout_inspirations", {
   readingOrder: text("reading_order"), // "Z-pattern: headline → product → CTA"
   bestFor: jsonb("best_for").$type<string[]>(), // ["before_after", "comparison"]
   brandId: text("brand_id").references(() => brands.id, { onDelete: "cascade" }), // null = global
+  analysis: jsonb("analysis").$type<LayoutAnalysis>(), // Claude Vision analysis
   createdAt: text("created_at")
     .default(sql`NOW()`)
     .notNull(),

@@ -47,10 +47,10 @@ export const META_ADS_CONSTRAINTS = {
 
   // Aspect ratio specific layouts
   aspectRatioLayouts: {
-    "1:1": ["center_hero_top_claim", "card_stack", "badge_cluster", "left_copy_right_product"],
-    "4:5": ["left_copy_right_product", "split_screen", "hero_with_bottom_offer"],
-    "9:16": ["vertical_story_stack", "hero_with_bottom_offer", "center_hero_top_claim"],
-    "16:9": ["split_screen", "left_copy_right_product", "macro_with_side_copy"],
+    "1:1": ["hero_image", "product_focus", "testimonial_card", "statistique_data_point", "negative_space", "single_word"],
+    "4:5": ["hero_image", "product_in_context", "split_screen", "avant_apres", "text_heavy", "ugc_style"],
+    "9:16": ["story_sequence", "product_focus", "hero_image", "golden_hour", "manifesto", "action_shot"],
+    "16:9": ["split_screen", "timeline_compare", "annotation_callout", "macro_detail", "press_as_seen_in"],
   } as Record<string, string[]>,
 
   // Product scale recommendations by role
@@ -562,7 +562,7 @@ export async function directArtBatch(
         belief_shift: brief.promise || "",
         proof_mechanism: "mechanism",
         proof_text: brief.proof_to_show,
-        layout_family: "center_hero_top_claim",
+        layout_family: "hero_image",
         render_family: "photo_led",
         rupture_structure: "radical_minimalism",
         graphic_tension: "spotlight",

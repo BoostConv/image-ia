@@ -7,6 +7,7 @@ import { writeFile, mkdir, unlink } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import type { LayoutFamily } from "@/lib/db/schema";
+import { analyzeLayoutScreenshot } from "@/lib/engine/layout-analyzer";
 
 const UPLOAD_DIR = "uploads/layouts";
 
@@ -133,16 +134,19 @@ export async function POST(request: NextRequest) {
 
     // Validate layoutFamily
     const validFamilies: LayoutFamily[] = [
-      "left_copy_right_product",
-      "center_hero_top_claim",
-      "split_screen",
-      "card_stack",
-      "quote_frame",
-      "badge_cluster",
-      "vertical_story_stack",
-      "diagonal_split",
-      "hero_with_bottom_offer",
-      "macro_with_side_copy",
+      // Éducatifs
+      "story_sequence", "listicle", "annotation_callout", "flowchart",
+      // Centrés Image
+      "hero_image", "product_focus", "product_in_context", "probleme_zoome",
+      "golden_hour", "macro_detail", "action_shot", "ingredient_showcase",
+      "scale_shot", "destruction_shot", "texture_fill", "negative_space",
+      // Social Proof
+      "testimonial_card", "ugc_style", "press_as_seen_in", "wall_of_love",
+      "statistique_data_point", "tweet_post_screenshot",
+      // Comparatifs
+      "split_screen", "timeline_compare", "avant_apres",
+      // Centrés Texte
+      "text_heavy", "single_word", "fill_the_blank", "two_truths", "manifesto", "quote_card",
     ];
 
     if (!validFamilies.includes(layoutFamily)) {
@@ -190,7 +194,17 @@ export async function POST(request: NextRequest) {
 
     // Save file
     const bytes = await file.arrayBuffer();
-    await writeFile(fullPath, Buffer.from(bytes));
+    const imageBuffer = Buffer.from(bytes);
+    await writeFile(fullPath, imageBuffer);
+
+    // Analyze layout with Claude Vision
+    let analysis = null;
+    try {
+      analysis = await analyzeLayoutScreenshot(imageBuffer, layoutFamily, name);
+      console.log(`[LayoutInspirations] Vision analysis complete for "${name}" (${layoutFamily})`);
+    } catch (err) {
+      console.warn(`[LayoutInspirations] Vision analysis failed for "${name}", continuing without:`, err);
+    }
 
     // Insert into database
     await db.insert(layoutInspirations).values({
@@ -199,10 +213,11 @@ export async function POST(request: NextRequest) {
       name,
       imagePath: relativePath,
       description,
-      gridSystem,
-      readingOrder,
+      gridSystem: gridSystem || analysis?.grid_structure || null,
+      readingOrder: readingOrder || analysis?.reading_order || null,
       bestFor,
       brandId,
+      analysis,
       createdAt: new Date().toISOString(),
     });
 
@@ -212,10 +227,11 @@ export async function POST(request: NextRequest) {
       name,
       imagePath: relativePath,
       description,
-      gridSystem,
-      readingOrder,
+      gridSystem: gridSystem || analysis?.grid_structure || null,
+      readingOrder: readingOrder || analysis?.reading_order || null,
       bestFor,
       brandId,
+      analysis,
     }, { status: 201 });
   } catch (error) {
     console.error("[LayoutInspirations] POST Error:", error);

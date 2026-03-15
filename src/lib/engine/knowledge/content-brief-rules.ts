@@ -210,16 +210,26 @@ export const PRIORITY_ORDER = [
 /**
  * Get content brief directive for a specific pipeline stage.
  */
-export function getContentBriefDirective(stage: "art_director" | "prompt_builder" | "quality_gate" | "planner"): string {
+export function getContentBriefDirective(stage: "art_director" | "prompt_builder" | "quality_gate" | "planner", brandTone?: string): string {
   switch (stage) {
-    case "planner":
+    case "planner": {
+      // Filter UGLY ADS by brand tone — not for premium/luxe/serious/scientific brands
+      const uglyAdsLine = (() => {
+        if (!brandTone) return `UGLY ADS: ${UGLY_ADS.principle} Formats: ${UGLY_ADS.formats.slice(0, 4).join(", ")}`;
+        const toneLower = brandTone.toLowerCase();
+        const excludeTones = ["luxe", "luxury", "premium", "pharma", "scientifique", "serieu", "medical", "haut de gamme", "clean"];
+        const isExcluded = excludeTones.some(t => toneLower.includes(t));
+        if (isExcluded) return ""; // Skip UGLY ADS for this brand tone
+        return `UGLY ADS: ${UGLY_ADS.principle} Formats: ${UGLY_ADS.formats.slice(0, 4).join(", ")}`;
+      })();
+
       return `PSYCHOLOGIE VISUELLE:
 - ${VISUAL_PSYCHOLOGY.key_rule}
 - ${VISUAL_PSYCHOLOGY.cognitive_ease}
 - ${VISUAL_PSYCHOLOGY.halo_effect}
 SCHEMA Z (defaut): ${READING_PATTERNS.z_pattern.trajectory}
-UGLY ADS: ${UGLY_ADS.principle} Formats: ${UGLY_ADS.formats.slice(0, 4).join(", ")}
-DIVERSIFICATION: ${DIVERSIFICATION_RULES.patterns} ${DIVERSIFICATION_RULES.layouts}`;
+${uglyAdsLine ? uglyAdsLine + "\n" : ""}DIVERSIFICATION: ${DIVERSIFICATION_RULES.patterns} ${DIVERSIFICATION_RULES.layouts}`;
+    }
 
     case "art_director":
       return `PSYCHOLOGIE VISUELLE:

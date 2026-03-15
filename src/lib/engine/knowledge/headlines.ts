@@ -110,7 +110,7 @@ export const CAPTION_HEADLINES: Record<"tofu" | "mofu" | "bofu", string[]> = {
  */
 export const TEXT_ON_IMAGE_RULES = {
   maxCoveragePercent: 20,
-  maxHeadlineWords: 7,
+  maxHeadlineWords: 10,
   hierarchy: {
     headline: "Large size, Bold weight",
     subHeadline: "Medium size",

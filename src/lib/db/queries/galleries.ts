@@ -83,31 +83,37 @@ export async function getBrandGalleries(brandId: string) {
 
 export async function createClientReview(data: {
   imageId: string;
-  galleryId: string;
+  galleryId?: string;
   verdict: string;
   comment?: string;
+  reviewerName?: string;
+  reviewerEmail?: string;
 }) {
   const id = nanoid();
   await db.insert(reviews).values({
     id,
     imageId: data.imageId,
-    galleryId: data.galleryId,
+    galleryId: data.galleryId || null,
     reviewerType: "client",
     verdict: data.verdict,
     comment: data.comment || null,
+    reviewerName: data.reviewerName || null,
+    reviewerEmail: data.reviewerEmail || null,
   });
 
-  // Update image status
-  const statusMap: Record<string, string> = {
-    approved: "approved",
-    rejected: "rejected",
-    revision: "pending",
-  };
-  const newStatus = statusMap[data.verdict] || "pending";
-  await db
-    .update(generatedImages)
-    .set({ status: newStatus })
-    .where(eq(generatedImages.id, data.imageId));
+  // Update image status — variant doesn't change status
+  if (data.verdict !== "variant") {
+    const statusMap: Record<string, string> = {
+      approved: "approved",
+      rejected: "rejected",
+      revision: "pending",
+    };
+    const newStatus = statusMap[data.verdict] || "pending";
+    await db
+      .update(generatedImages)
+      .set({ status: newStatus })
+      .where(eq(generatedImages.id, data.imageId));
+  }
 
   return id;
 }
@@ -118,4 +124,34 @@ export async function getGalleryReviews(galleryId: string) {
     .from(reviews)
     .where(eq(reviews.galleryId, galleryId))
     .orderBy(desc(reviews.createdAt));
+}
+
+export async function getBrandGalleriesWithDetails(brandId: string) {
+  const galleriesList = await db
+    .select()
+    .from(galleries)
+    .where(eq(galleries.brandId, brandId))
+    .orderBy(desc(galleries.createdAt));
+
+  return Promise.all(
+    galleriesList.map(async (gallery) => {
+      const images = await db
+        .select({
+          id: generatedImages.id,
+          filePath: generatedImages.filePath,
+          status: generatedImages.status,
+          format: generatedImages.format,
+        })
+        .from(generatedImages)
+        .where(eq(generatedImages.galleryId, gallery.id));
+
+      const galleryReviews = await db
+        .select()
+        .from(reviews)
+        .where(eq(reviews.galleryId, gallery.id))
+        .orderBy(desc(reviews.createdAt));
+
+      return { ...gallery, images, reviews: galleryReviews };
+    })
+  );
 }

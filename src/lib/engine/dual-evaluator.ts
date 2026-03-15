@@ -137,22 +137,7 @@ export async function evaluateComposedAd(
   context: FilteredContext,
   conceptIndex: number
 ): Promise<ComposedAdEvaluation> {
-  // If no composition was applied (textDensity="none"), return default scores
-  if (composed.layoutUsed === "none") {
-    return {
-      stop_scroll_power: 5,
-      message_clarity: 3,
-      mobile_readability: 5,
-      visual_cohesion: 7,
-      text_legibility: 5,
-      hierarchy_effectiveness: 3,
-      cta_visibility: 1,
-      brand_consistency: 5,
-      overall_composed: 4,
-      improvement_notes: ["No composition applied — image brute sans texte"],
-    };
-  }
-
+  // Text is now rendered directly by Gemini — always evaluate the actual image
   const client = getClient();
 
   const imageBase64 = composed.buffer.toString("base64");
@@ -187,10 +172,9 @@ Reponds UNIQUEMENT en JSON valide.`,
             text: `Evalue cette pub composee finale :
 Marque: ${context.brand_name}
 Produit: ${context.product_name}
-Layout utilise: ${composed.layoutUsed}
-Zones utilisees: ${composed.zonesUsed.join(", ")}
-Headline: "${composed.copyAssets.headline}"
-CTA: "${composed.copyAssets.cta || "aucun"}"
+Headline attendu: "${composed.copyAssets.headline}"
+CTA attendu: "${composed.copyAssets.cta || "aucun"}"
+Note: Le texte (headline, CTA, marque) est rendu directement dans l'image par le generateur. Evalue la lisibilite et l'integration du texte TEL QU'IL APPARAIT dans l'image.
 
 === FORMAT ===
 {

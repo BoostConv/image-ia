@@ -226,6 +226,39 @@ export function inferBrandPolicy(context: FilteredContext): BrandStylePolicy {
   return policy;
 }
 
+// ─── Merge DB overrides with inferred policy ────────────────
+
+/**
+ * Merge a DB-stored partial policy with an inferred one.
+ * DB overrides take precedence; unset fields fall back to inferred.
+ */
+export function mergeBrandPolicy(
+  inferred: BrandStylePolicy,
+  overrides?: Partial<BrandStylePolicy>,
+): BrandStylePolicy {
+  if (!overrides) return inferred;
+
+  const merged = structuredClone(inferred);
+
+  if (overrides.style_permissions) {
+    for (const mode of Object.keys(overrides.style_permissions) as StyleMode[]) {
+      merged.style_permissions[mode] = {
+        ...merged.style_permissions[mode],
+        ...overrides.style_permissions[mode],
+      };
+    }
+  }
+
+  if (overrides.preferred_render_families) merged.preferred_render_families = overrides.preferred_render_families;
+  if (overrides.human_presence_allowed) merged.human_presence_allowed = overrides.human_presence_allowed;
+  if (overrides.max_stretch_per_batch !== undefined) merged.max_stretch_per_batch = overrides.max_stretch_per_batch;
+  if (overrides.color_constraints) merged.color_constraints = { ...merged.color_constraints, ...overrides.color_constraints };
+  if (overrides.product_constraints) merged.product_constraints = { ...merged.product_constraints, ...overrides.product_constraints };
+  if (overrides.copy_constraints) merged.copy_constraints = { ...merged.copy_constraints, ...overrides.copy_constraints };
+
+  return merged;
+}
+
 // ─── Policy validation helpers ──────────────────────────────
 
 /**
@@ -314,31 +347,29 @@ export function countStretchInBatch(
 
 /**
  * Format the policy as a string for Claude prompts.
+ * Only outputs RESTRICTIONS — skips "allowed" entries to reduce noise.
  */
 export function formatPolicyForPrompt(policy: BrandStylePolicy): string {
-  const lines: string[] = [
-    `=== BRAND STYLE POLICY: "${policy.brand_name}" ===`,
-    "",
-    "STYLE PERMISSIONS (brand_native):",
-  ];
+  const lines: string[] = [];
 
+  // Only show forbidden/stretch styles (skip "allowed" — no signal)
+  const forbidden: string[] = [];
+  const stretch: string[] = [];
   for (const [style, permission] of Object.entries(policy.style_permissions.brand_native)) {
-    lines.push(`  ${style}: ${permission}`);
+    if (permission === "forbidden") forbidden.push(style);
+    else if (permission === "stretch") stretch.push(style);
   }
 
-  lines.push("");
-  lines.push(`Render families (préférence): ${policy.preferred_render_families.join(" > ")}`);
-  lines.push(`Human presence autorisée: ${policy.human_presence_allowed.join(", ")}`);
-  lines.push(`Max stretch par batch: ${policy.max_stretch_per_batch}`);
-  lines.push(`Headline max: ${policy.copy_constraints.max_headline_chars} chars`);
-  lines.push(`Produit visible obligatoire: ${policy.product_constraints.require_product_visible ? "OUI" : "NON"}`);
-
-  if (policy.copy_constraints.tone_rules.length > 0) {
-    lines.push(`Ton: ${policy.copy_constraints.tone_rules.join(", ")}`);
-  }
-
-  if (policy.color_constraints.forbidden_backgrounds.length > 0) {
-    lines.push(`Fonds interdits: ${policy.color_constraints.forbidden_backgrounds.join(", ")}`);
+  if (forbidden.length > 0 || stretch.length > 0 || policy.copy_constraints.tone_rules.length > 0) {
+    lines.push(`=== CONTRAINTES STYLE "${policy.brand_name}" ===`);
+    if (forbidden.length > 0) lines.push(`Styles INTERDITS: ${forbidden.join(", ")}`);
+    if (stretch.length > 0) lines.push(`Styles à utiliser avec parcimonie (max ${policy.max_stretch_per_batch}/batch): ${stretch.join(", ")}`);
+    lines.push(`Render préféré: ${policy.preferred_render_families[0]}`);
+    if (policy.copy_constraints.max_headline_chars < 40) lines.push(`Headline max: ${policy.copy_constraints.max_headline_chars} chars`);
+    if (!policy.color_constraints.allow_neon) lines.push(`Néons/fluorescents: INTERDIT`);
+    if (policy.color_constraints.forbidden_backgrounds.length > 0) lines.push(`Fonds interdits: ${policy.color_constraints.forbidden_backgrounds.join(", ")}`);
+    if (policy.copy_constraints.tone_rules.length > 0) lines.push(`Ton: ${policy.copy_constraints.tone_rules.join(", ")}`);
+    if (!policy.product_constraints.allow_occlusion) lines.push(`Produit: jamais occulté, toujours entièrement visible`);
   }
 
   return lines.join("\n");

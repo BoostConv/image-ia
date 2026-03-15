@@ -139,6 +139,9 @@ export async function PATCH(request: NextRequest) {
       tonCommunication,
       briefMetadata,
       briefStatus,
+      // Auto-analyze sources
+      instagramHandle,
+      facebookPageUrl,
     } = body;
 
     if (!id) {
@@ -165,6 +168,8 @@ export async function PATCH(request: NextRequest) {
     if (tonCommunication !== undefined) updates.tonCommunication = tonCommunication;
     if (briefMetadata !== undefined) updates.briefMetadata = briefMetadata;
     if (briefStatus !== undefined) updates.briefStatus = briefStatus;
+    if (instagramHandle !== undefined) updates.instagramHandle = instagramHandle;
+    if (facebookPageUrl !== undefined) updates.facebookPageUrl = facebookPageUrl;
 
     await db.update(brandsTable).set(updates).where(eq(brandsTable.id, id));
     return NextResponse.json({ success: true });

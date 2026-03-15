@@ -22,6 +22,7 @@ export default async function BrandLayout({
         brandId={brand.id}
         brandName={brand.name}
         brandColor={brand.colorPalette?.primary}
+        logoPath={brand.logoPath}
       />
       <main className="flex-1 overflow-y-auto bg-background">
         {children}

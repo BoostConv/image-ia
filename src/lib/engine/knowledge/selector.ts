@@ -24,15 +24,17 @@ import { getContentBriefDirective } from "./content-brief-rules";
  * Get knowledge for a specific pipeline stage and awareness level.
  * Each stage gets a tailored subset of methodology knowledge.
  * @param formatFamilies Optional format families for layout filtering (planner only)
+ * @param brandTone Optional brand tone for filtering inappropriate knowledge (e.g. UGLY ADS for premium brands)
  */
 export function getKnowledgeForStage(
   stage: PipelineStage,
   awareness: AwarenessLevel,
   formatFamilies?: string[],
+  brandTone?: string,
 ): StageKnowledge {
   switch (stage) {
     case "planner":
-      return getPlannerKnowledge(awareness, formatFamilies);
+      return getPlannerKnowledge(awareness, formatFamilies, brandTone);
     case "art_director":
       return getArtDirectorKnowledge(awareness);
     case "prompt_builder":
@@ -69,7 +71,7 @@ export function getKnowledgeForPattern(
 // Gets: Schwartz strategy + patterns for awareness + layouts + copywriting principles
 // This is the MOST knowledge-heavy stage.
 
-function getPlannerKnowledge(awareness: AwarenessLevel, formatFamilies?: string[]): StageKnowledge {
+function getPlannerKnowledge(awareness: AwarenessLevel, formatFamilies?: string[], brandTone?: string): StageKnowledge {
   // P5 optimization: use filtered layouts if format families are known
   const layoutDirective = formatFamilies && formatFamilies.length > 0
     ? getLayoutsForFormats(formatFamilies)
@@ -89,7 +91,7 @@ ${COMBINATORICS_REMINDER}`,
 
 ${layoutDirective}
 
-${getContentBriefDirective("planner")}`,
+${getContentBriefDirective("planner", brandTone)}`,
     copy_rules: `${getCopywritingFrameworkDirective("planner")}`,
     tactics: compactTactics,
   };

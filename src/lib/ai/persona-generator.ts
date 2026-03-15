@@ -113,36 +113,48 @@ export async function generatePersonaSet(
 
 ## TA MISSION
 
-Creer des PERSONAS RICHES avec une profondeur psychologique permettant de creer des publicites qui resonnent profondement.
+Creer des PERSONAS PSYCHOGRAPHIQUES thematiques — PAS des fiches demographiques type "Claire, 38 ans, cadre a Paris".
+
+Chaque persona represente un ARCHETYPE COMPORTEMENTAL identifie par un theme descriptif (ex: "Le Sportif du dimanche", "L'Eco-consciente exigeante", "Le Biohacker impatient").
+
+## PHILOSOPHIE
+
+On ne cible PAS un age ou un genre — on cible une PSYCHOLOGIE, un RAPPORT AU MONDE, un PATTERN COMPORTEMENTAL.
+Deux personnes de 25 et 55 ans peuvent etre "Le Perfectionniste anxieux" — ce qui compte c'est leur facon de penser, decider, resister.
 
 ## STRUCTURE DU PERSONA
 
-### 1. IDENTITE
-- **name**: Prenom + description courte (ex: "Marie, 34 ans")
-- **avatar**: Description visuelle detaillee pour generer une image
-- **tagline**: "Le/La [role] qui [tension/desir]" (ex: "La mere active qui culpabilise de ne pas cuisiner maison")
+### 1. IDENTITE THEMATIQUE
+- **name**: Theme descriptif (ex: "Le Sportif du dimanche", "L'Optimiseur obsessionnel", "La Pragmatique no-bullshit")
+  → PAS de prenom, PAS d'age dans le nom
+- **avatar**: Description visuelle d'une SCENE ou AMBIANCE representant ce persona (pas un portrait type)
+  Ex: "Bureau minimaliste avec un planning nutrition affiche, shaker proteine, laptop ouvert sur un comparatif"
+- **tagline**: "[Archetype] qui [tension centrale]"
+  Ex: "L'optimiseur qui veut le meilleur ROI de chaque achat sante"
 
-### 2. DEMOGRAPHIE COMPLETE
-Tous les champs: age, genre, localisation, revenu, profession, statut familial, education
+### 2. DEMOGRAPHIE LARGE
+- **ageRange**: large (ex: "25-45", "30-55") — c'est un RANGE, pas une fiche
+- Les autres champs (genre, location, income, profession, familyStatus, education) restent utiles mais doivent etre LARGES et INCLUSIFS
+  Ex: gender = "Mixte, legere surrepresentation masculine" plutot que "Homme"
 
 ### 3. PSYCHOGRAPHIE A 5 NIVEAUX DE DESIRS
 
 C'est LA partie la plus importante. 5 niveaux de profondeur:
 
 - **Niveau 1 (Surface)**: Ce qu'ils DISENT vouloir
-  Ex: "Je veux des snacks sains pour mes enfants"
+  Ex: "Je veux un snack proteine pratique"
 
 - **Niveau 2 (Fonctionnel)**: Ce qu'ils VEULENT VRAIMENT
-  Ex: "Je veux que mes enfants mangent mieux sans bataille"
+  Ex: "Je veux optimiser ma nutrition sans y passer des heures"
 
 - **Niveau 3 (Emotionnel)**: Comment ils veulent SE SENTIR
-  Ex: "Je veux me sentir comme une bonne mere"
+  Ex: "Je veux sentir que je fais les choses correctement"
 
 - **Niveau 4 (Identitaire)**: QUI ils veulent DEVENIR
-  Ex: "Je veux etre la mere qui donne le meilleur a ses enfants"
+  Ex: "Je veux etre quelqu'un de discipline et d'informe"
 
 - **Niveau 5 (Existentiel)**: Le SENS PROFOND recherche
-  Ex: "Je veux que mes enfants sachent que je les aime"
+  Ex: "Je veux prouver que ma rigueur produit des resultats superieurs"
 
 ### 4. PSYCHOLOGIE D'ACHAT
 - **primaryDefense**: Mecanisme de defense dominant (rationalisation, deni, projection, etc.)
@@ -154,13 +166,13 @@ C'est LA partie la plus importante. 5 niveaux de profondeur:
 ### 5. PROFIL LINGUISTIQUE
 - **vocabularyLevel**: simple | intermediaire | sophistique
 - **preferredTone**: Tons preferes
-- **triggerWords**: Mots qui captent l'attention
-- **avoidWords**: Mots qui repoussent
-- **metaphorsResonant**: Metaphores qui parlent
+- **triggerWords**: Mots qui captent l'attention DE CET ARCHETYPE
+- **avoidWords**: Mots qui repoussent CET ARCHETYPE
+- **metaphorsResonant**: Metaphores qui parlent A CET ARCHETYPE
 - **socialProofType**: experts | pairs | celebrities | statistics
 
 ### 6. TRIGGERS SITUATIONNELS (3-5)
-Moments de vie declencheurs avec:
+Moments de vie declencheurs specifiques a cet archetype avec:
 - situation, trigger, emotion, urgency (1-10), bestAngleType (EPIC)
 
 ### 7. COMPORTEMENT DIGITAL
@@ -172,111 +184,94 @@ Canaux de decouverte, comportement recherche, facteurs decision, post-achat
 ### 9. AFFINITES ANGLES (si angles fournis)
 Score d'affinite (1-10) avec raison pour chaque angle
 
-## REGLES
+## REGLES ABSOLUES
 
-- Sois SPECIFIQUE et CONCRET
-- Les desirs niveau 5 doivent etre EXISTENTIELS
-- Les triggers doivent etre des MOMENTS DE VIE reels
+- Le nom est TOUJOURS un archetype thematique ("Le/La [Theme]"), JAMAIS un prenom
+- PAS de fiche signaletique type "Marie, 34 ans, mariee, 2 enfants" — c'est un PROFIL PSYCHO
+- Les desirs niveau 5 doivent etre EXISTENTIELS et propres a l'archetype
+- Les triggers doivent etre des MOMENTS DE VIE reels et specifiques a l'archetype
 - Les beliefs incluent croyances LIMITANTES et HABILITANTES
-- Chaque persona = RADICALEMENT different
+- Chaque persona = RADICALEMENT different en PSYCHOLOGIE (pas juste en age/genre)
+- La demographie sert de CONTEXTE, pas de DEFINITION — c'est le profil psycho qui prime
 
 Reponds UNIQUEMENT en JSON valide (array de ${validCount} personas), sans texte avant ou apres.`,
       messages: [
         {
           role: "user",
-          content: `Genere ${validCount} persona(s) riche(s).
+          content: `Genere ${validCount} persona(s) psychographique(s) thematique(s).
+
+IMPORTANT: Reponds UNIQUEMENT en JSON valide. Pas d'apostrophes typographiques, pas de caracteres speciaux. Utilise des apostrophes simples (') dans le texte, pas des guillemets.
 
 ${context}
 
 === FORMAT JSON ATTENDU (array de ${validCount} objets) ===
 
-[
-  {
-    "name": "Marie, 34 ans",
-    "avatar": "Femme brune, cheveux mi-longs, traits fatigues mais souriants, tenue decontractee chic, fond de cuisine moderne",
-    "tagline": "La mere active qui culpabilise de ne pas cuisiner maison",
-    "demographics": {
-      "ageRange": "30-40",
-      "gender": "Femme",
-      "location": "Banlieue parisienne",
-      "income": "50-70k EUR",
-      "profession": "Cadre moyenne",
-      "familyStatus": "Mariee, 2 enfants (4 et 7 ans)",
-      "education": "Bac+5"
-    },
-    "psychographics": {
-      "desires": [
-        {"level": 1, "description": "Je veux des snacks sains pour mes enfants"},
-        {"level": 2, "description": "Je veux que mes enfants mangent mieux sans bataille"},
-        {"level": 3, "description": "Je veux me sentir comme une bonne mere"},
-        {"level": 4, "description": "Je veux etre la mere qui donne le meilleur"},
-        {"level": 5, "description": "Je veux que mes enfants sachent que je les aime"}
-      ],
-      "fears": ["Etre une mauvaise mere", "Endommager la sante de ses enfants"],
-      "frustrations": ["Manque de temps", "Enfants difficiles", "Culpabilite permanente"],
-      "aspirations": ["Equilibre vie pro/perso", "Famille epanouie"],
-      "values": ["Sante", "Authenticite", "Famille"],
-      "beliefs": ["Les bons produits coutent cher (limitante)", "Une bonne mere fait des sacrifices (habilitante)"]
-    },
-    "buyingPsychology": {
-      "primaryDefense": "Rationalisation (cherche des preuves pour justifier)",
-      "resistancePatterns": ["Compare obsessivement", "Attend les promos", "Demande l'avis du conjoint"],
-      "trustBuilders": ["Avis de meres similaires", "Labels bio/naturel", "Marques transparentes"],
-      "decisionStyle": "social",
-      "riskTolerance": "modere"
-    },
-    "languageProfile": {
-      "vocabularyLevel": "intermediaire",
-      "preferredTone": ["Bienveillant", "Complice", "Sans jugement"],
-      "triggerWords": ["naturel", "sans culpabilite", "approuve par les mamans", "pratique"],
-      "avoidWords": ["parfait", "ideal", "sacrifice", "devoir"],
-      "metaphorsResonant": ["Armure protectrice", "Bulle de bien-etre", "Coup de pouce"],
-      "socialProofType": "pairs"
-    },
-    "situationalTriggers": [
-      {
-        "situation": "Sortie d'ecole pressée",
-        "trigger": "Enfant reclame un gouter",
-        "emotion": "Culpabilite + stress",
-        "urgency": 8,
-        "bestAngleType": "practical"
-      },
-      {
-        "situation": "Dimanche soir preparation semaine",
-        "trigger": "Planification des repas",
-        "emotion": "Charge mentale",
-        "urgency": 6,
-        "bestAngleType": "emotional"
-      }
+Chaque objet doit avoir EXACTEMENT cette structure:
+
+{
+  "name": "L'Optimiseur sante",
+  "avatar": "Scene representant l'univers mental du persona",
+  "tagline": "L'archetype qui [tension]",
+  "demographics": {
+    "ageRange": "25-45",
+    "gender": "Mixte",
+    "location": "Urbain",
+    "income": "40-80k",
+    "profession": "...",
+    "familyStatus": "Variable",
+    "education": "..."
+  },
+  "psychographics": {
+    "desires": [
+      {"level": 1, "description": "Desir surface"},
+      {"level": 2, "description": "Desir fonctionnel"},
+      {"level": 3, "description": "Desir emotionnel"},
+      {"level": 4, "description": "Desir identitaire"},
+      {"level": 5, "description": "Desir existentiel"}
     ],
-    "digitalBehavior": {
-      "platforms": ["Instagram", "Facebook", "Pinterest"],
-      "contentPreferences": ["Temoignages meres", "Recettes rapides", "Astuces organisation"],
-      "peakActivityTimes": ["12h-14h", "21h-23h"],
-      "devicePreference": "mobile",
-      "attentionSpan": "court"
-    },
-    "customerJourney": {
-      "awarenessChannels": ["Instagram ads", "Recommandations amies", "Blogs parentalite"],
-      "researchBehavior": "Compare 3-4 options, lit les avis, verifie les ingredients",
-      "decisionFactors": ["Avis positifs", "Ingredients naturels", "Rapport qualite/prix"],
-      "postPurchaseBehavior": "Partage sur les groupes maman si satisfaite"
-    },
-    "angleAffinities": [
-      {
-        "angleId": "angle_1",
-        "affinityScore": 9,
-        "reason": "Resonne avec la culpabilite maternelle"
-      }
-    ],
-    "fieldConfidences": {
-      "demographics": 0.9,
-      "desires": 0.85,
-      "triggers": 0.8
-    },
-    "gaps": []
-  }
-]`,
+    "fears": ["..."],
+    "frustrations": ["..."],
+    "aspirations": ["..."],
+    "values": ["..."],
+    "beliefs": ["... (limitante)", "... (habilitante)"]
+  },
+  "buyingPsychology": {
+    "primaryDefense": "...",
+    "resistancePatterns": ["..."],
+    "trustBuilders": ["..."],
+    "decisionStyle": "analytique|impulsif|social|emotionnel",
+    "riskTolerance": "faible|modere|eleve"
+  },
+  "languageProfile": {
+    "vocabularyLevel": "simple|intermediaire|sophistique",
+    "preferredTone": ["..."],
+    "triggerWords": ["..."],
+    "avoidWords": ["..."],
+    "metaphorsResonant": ["..."],
+    "socialProofType": "experts|pairs|celebrities|statistics"
+  },
+  "situationalTriggers": [
+    {"situation": "...", "trigger": "...", "emotion": "...", "urgency": 7, "bestAngleType": "practical|emotional|identity|critical"}
+  ],
+  "digitalBehavior": {
+    "platforms": ["..."],
+    "contentPreferences": ["..."],
+    "peakActivityTimes": ["..."],
+    "devicePreference": "mobile|desktop|tablet",
+    "attentionSpan": "court|moyen|long"
+  },
+  "customerJourney": {
+    "awarenessChannels": ["..."],
+    "researchBehavior": "...",
+    "decisionFactors": ["..."],
+    "postPurchaseBehavior": "..."
+  },
+  "angleAffinities": [],
+  "fieldConfidences": {"demographics": 0.8, "desires": 0.9, "triggers": 0.85},
+  "gaps": []
+}
+
+Remplis CHAQUE champ avec du contenu riche et specifique a l'archetype. 3-5 items par array. Desirs = 5 niveaux obligatoires. Triggers = 2-4.`,
         },
       ],
     })
@@ -301,8 +296,17 @@ ${context}
 
     return personas;
   } catch (e) {
-    console.error("[PersonaGenerator] JSON parse error:", jsonStr.slice(0, 400));
-    throw new Error(`Persona Generator: JSON invalide — ${(e as Error).message}`);
+    const err = e as Error;
+    // Log context around the error position for debugging
+    const posMatch = err.message.match(/position (\d+)/);
+    if (posMatch) {
+      const pos = parseInt(posMatch[1]);
+      console.error("[PersonaGenerator] JSON error at position", pos);
+      console.error("[PersonaGenerator] Context:", JSON.stringify(jsonStr.slice(Math.max(0, pos - 80), pos + 80)));
+    } else {
+      console.error("[PersonaGenerator] JSON parse error:", jsonStr.slice(0, 500));
+    }
+    throw new Error(`Persona Generator: JSON invalide — ${err.message}`);
   }
 }
 

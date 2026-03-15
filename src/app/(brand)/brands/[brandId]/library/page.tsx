@@ -8,6 +8,26 @@ import { Images } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/link-button";
 import { LibraryClient } from "@/components/library/library-client";
+import { db } from "@/lib/db";
+import { reviews } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
+
+async function getLatestVerdicts(imageIds: string[]): Promise<Map<string, string>> {
+  if (imageIds.length === 0) return new Map();
+  const allReviews = await db
+    .select({ imageId: reviews.imageId, verdict: reviews.verdict, createdAt: reviews.createdAt })
+    .from(reviews)
+    .orderBy(desc(reviews.createdAt));
+  // Keep only the latest review per image
+  const map = new Map<string, string>();
+  const imageIdSet = new Set(imageIds);
+  for (const r of allReviews) {
+    if (imageIdSet.has(r.imageId) && !map.has(r.imageId)) {
+      map.set(r.imageId, r.verdict);
+    }
+  }
+  return map;
+}
 
 export default async function BrandLibraryPage({
   params,
@@ -19,6 +39,7 @@ export default async function BrandLibraryPage({
   if (!brand) notFound();
 
   const images = await getBrandImages(brandId);
+  const verdicts = await getLatestVerdicts(images.map((img) => img.id));
 
   return (
     <div className="p-6 space-y-6">
@@ -63,6 +84,11 @@ export default async function BrandLibraryPage({
               createdAt: img.createdAt,
               scoreData: img.scoreData,
               compiledPrompt: promptUsed || visualIdea || img.compiledPrompt || null,
+              lastVerdict: verdicts.get(img.id) || null,
+              geminiSystemInstruction: (cd?.gemini_system_instruction as string) || null,
+              geminiEditPrompt: (cd?.gemini_edit_prompt as string) || null,
+              claudeSystemPrompt: (cd?.claude_system_prompt as string) || null,
+              claudeUserPrompt: (cd?.claude_user_prompt as string) || null,
             };
           })}
         />

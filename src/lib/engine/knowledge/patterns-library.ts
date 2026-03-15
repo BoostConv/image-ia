@@ -351,8 +351,8 @@ Mecanismes headline: ${pattern.headline_mechanisms.join(", ")}${subTypesStr}${wa
  */
 export function getPatternsForAwarenessDirective(awareness: AwarenessLevel): string {
   const matrix = PATTERN_SELECTION_MATRIX[awareness];
-  // P5: limit to 6 patterns max (reduces prompt size)
-  const topPatternIds = matrix.recommended.slice(0, 6);
+  // P6: limit to 3 patterns max (Claude only uses 1 per concept anyway)
+  const topPatternIds = matrix.recommended.slice(0, 3);
   const patternSummaries = topPatternIds
     .map(id => {
       const p = PERSUASIVE_PATTERNS[id];

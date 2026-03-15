@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -8,18 +9,22 @@ import {
   Images,
   MessageSquare,
   BookOpen,
-  Settings,
   ArrowLeft,
-  Zap,
+  Palette,
+  Package,
+  Lightbulb,
+  ShieldAlert,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface BrandSidebarProps {
   brandId: string;
   brandName: string;
   brandColor?: string;
+  logoPath?: string | null;
 }
 
-export function BrandSidebar({ brandId, brandName, brandColor }: BrandSidebarProps) {
+export function BrandSidebar({ brandId, brandName, brandColor, logoPath }: BrandSidebarProps) {
   const pathname = usePathname();
   const basePath = `/brands/${brandId}`;
 
@@ -44,10 +49,31 @@ export function BrandSidebar({ brandId, brandName, brandColor }: BrandSidebarPro
       href: `${basePath}/guidelines`,
       icon: BookOpen,
     },
+    // Separator will be rendered between index 3 and 4
     {
-      label: "Parametres",
-      href: `${basePath}/settings`,
-      icon: Settings,
+      label: "Marque",
+      href: `${basePath}/brand`,
+      icon: Palette,
+    },
+    {
+      label: "Produits",
+      href: `${basePath}/products`,
+      icon: Package,
+    },
+    {
+      label: "Regles IA",
+      href: `${basePath}/rules`,
+      icon: ShieldAlert,
+    },
+    {
+      label: "Style Policy",
+      href: `${basePath}/style`,
+      icon: SlidersHorizontal,
+    },
+    {
+      label: "Inspirations",
+      href: `${basePath}/inspirations`,
+      icon: Lightbulb,
     },
   ];
 
@@ -66,12 +92,26 @@ export function BrandSidebar({ brandId, brandName, brandColor }: BrandSidebarPro
 
       {/* Brand header */}
       <div className="flex items-center gap-2 border-b px-6 py-4">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg"
-          style={{ backgroundColor: brandColor || "#6366f1" }}
-        >
-          <Zap className="h-4 w-4 text-white" />
-        </div>
+        {logoPath ? (
+          <div className="relative h-8 w-8 rounded-lg overflow-hidden border bg-white">
+            <Image
+              src={`/api/images/${encodeURIComponent(logoPath)}`}
+              alt={brandName}
+              fill
+              className="object-contain p-0.5"
+              sizes="32px"
+            />
+          </div>
+        ) : (
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ backgroundColor: brandColor || "#6366f1" }}
+          >
+            <span className="text-xs font-bold text-white">
+              {brandName.charAt(0).toUpperCase()}
+            </span>
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-bold leading-tight truncate">{brandName}</h1>
           <p className="text-[10px] text-muted-foreground">Espace marque</p>
@@ -80,23 +120,28 @@ export function BrandSidebar({ brandId, brandName, brandColor }: BrandSidebarPro
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
+        {navItems.map((item, index) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            <div key={item.href}>
+              {/* Separator before "Marque" (index 4) */}
+              {index === 4 && (
+                <div className="my-2 border-t" />
               )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            </div>
           );
         })}
       </nav>

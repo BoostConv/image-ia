@@ -656,13 +656,66 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
 
 // ─── SELECTION ─────────────────────────────────────────────
 
+// ─── LAYOUT FAMILY → TEMPLATE MAPPING ────────────────────────
+// Maps the 31 new layout families to the 10 existing template structures.
+// This lets the composer reuse proven zone placements for similar layouts.
+
+const LAYOUT_TO_TEMPLATE: Record<string, string> = {
+  // Éducatifs
+  story_sequence: "vertical_story_stack",
+  listicle: "card_stack",
+  annotation_callout: "macro_with_side_copy",
+  flowchart: "vertical_story_stack",
+  // Centrés Image
+  hero_image: "center_hero_top_claim",
+  product_focus: "center_hero_top_claim",
+  product_in_context: "hero_with_bottom_offer",
+  probleme_zoome: "macro_with_side_copy",
+  golden_hour: "hero_with_bottom_offer",
+  macro_detail: "macro_with_side_copy",
+  action_shot: "center_hero_top_claim",
+  ingredient_showcase: "badge_cluster",
+  scale_shot: "split_screen",
+  destruction_shot: "center_hero_top_claim",
+  texture_fill: "hero_with_bottom_offer",
+  negative_space: "left_copy_right_product",
+  // Social Proof
+  testimonial_card: "quote_frame",
+  ugc_style: "quote_frame",
+  press_as_seen_in: "badge_cluster",
+  wall_of_love: "card_stack",
+  statistique_data_point: "diagonal_split",
+  tweet_post_screenshot: "quote_frame",
+  // Comparatifs
+  split_screen: "split_screen",
+  timeline_compare: "split_screen",
+  avant_apres: "split_screen",
+  // Centrés Texte
+  text_heavy: "diagonal_split",
+  single_word: "diagonal_split",
+  fill_the_blank: "diagonal_split",
+  two_truths: "split_screen",
+  manifesto: "diagonal_split",
+  quote_card: "quote_frame",
+};
+
 /**
- * Select layout template by LayoutFamily (v3 — direct ID match).
+ * Select layout template by LayoutFamily (v3 — maps 31 families to 10 templates).
  * Falls back to center_hero_top_claim if no match.
  */
 export function selectLayoutByFamily(layoutFamily: string): LayoutTemplate {
-  return LAYOUT_TEMPLATES.find((t) => t.id === layoutFamily)
-    || LAYOUT_TEMPLATES.find((t) => t.id === "center_hero_top_claim")!;
+  // First try direct match (old template IDs)
+  const direct = LAYOUT_TEMPLATES.find((t) => t.id === layoutFamily);
+  if (direct) return direct;
+
+  // Map new layout family to closest template
+  const templateId = LAYOUT_TO_TEMPLATE[layoutFamily];
+  if (templateId) {
+    return LAYOUT_TEMPLATES.find((t) => t.id === templateId)
+      || LAYOUT_TEMPLATES.find((t) => t.id === "center_hero_top_claim")!;
+  }
+
+  return LAYOUT_TEMPLATES.find((t) => t.id === "center_hero_top_claim")!;
 }
 
 /**

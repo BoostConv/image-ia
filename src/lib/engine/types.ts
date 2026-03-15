@@ -48,6 +48,12 @@ export interface RawPipelineInput {
     identiteFondamentale?: IdentiteFondamentale;
     positionnementStrategique?: PositionnementStrategique;
     tonCommunication?: TonCommunication;
+    // Brand Rules (AI guardrails)
+    brandRules?: { rules: Array<{ id: string; text: string; category: "copy" | "visual" | "concept" | "global" }> };
+    // Brand Style Policy (DB overrides for visual style constraints)
+    brandStylePolicy?: Record<string, unknown>;
+    // DA Fingerprint (persisted Claude Vision analysis of brand style images)
+    daFingerprint?: Record<string, unknown>;
   };
   product?: {
     name: string;
@@ -110,6 +116,12 @@ export interface RawPipelineInput {
   additionalReferenceImages?: Buffer[];
   /** Brand style reference images (Phase 5+) — paths to pre-uploaded brand style visuals */
   brandStyleImagePaths?: string[];
+  /** User-forced layout families — if set, skeletons will use these layouts instead of auto-picking */
+  forcedLayoutFamilies?: string[];
+  /** Creativity level: 1 = classique, 2 = creatif, 3 = experimental */
+  creativityLevel?: 1 | 2 | 3;
+  /** Prompt mode: "standard" = full pipeline prompt, "lean" = minimal prompt for better Gemini creativity */
+  promptMode?: "standard" | "lean";
 }
 
 // ─── A: FILTERED CONTEXT ────────────────────────────────────
@@ -138,6 +150,11 @@ export interface FilteredContext {
   brand_combat?: string;  // What the brand fights against (ennemi)
   brand_values?: Array<{ name: string; signification: string }>;
 
+  // Brand Rules (AI guardrails)
+  brand_rules_copy?: string[];    // Copy rules: never say/formulate X
+  brand_rules_visual?: string[];  // Visual rules: never show X in image
+  brand_rules_concept?: string[]; // Concept rules: never propose this type of idea
+
   // COUCHE 2 — Product Analysis
   product_fab_benefits?: string;      // Top FAB benefits formatted
   product_usp_triptyque?: string;     // USP/UMP/UMS formatted
@@ -156,6 +173,19 @@ export interface FilteredContext {
   persona_triggers?: string;          // Situational triggers
   persona_language_profile?: string;  // Trigger words, tone preferences
   persona_decision_style?: string;    // How they make decisions
+
+  // ═══ DATA ENRICHIE (extractions profondes) ═══
+
+  // COUCHE 2 — Extractions profondes produit
+  product_dur_problems?: string;      // Top DUR problems with scores + usage directive
+  product_before_after?: string;      // Before/after transformations per dimension
+  product_review_quotes?: string;     // Emotional quotes from real reviews
+
+  // COUCHE 3 — Direction visuelle de l'angle
+  angle_visual_direction?: string;    // Mood, color tone, imagery style from angle
+
+  // COUCHE 4 — Psychologie d'achat approfondie
+  persona_buying_psychology?: string; // Defense mechanisms, resistance patterns, trust builders
 }
 
 // ─── B: CREATIVE BRIEF (v2 — @deprecated, use ConceptSpec) ──
@@ -431,6 +461,7 @@ export interface ReferenceStrategy {
 
 export interface BuiltPrompt {
   prompt_for_model: string;
+  system_instruction?: string;
   edit_prompt_round_2: string;
   selected_reference_images: SelectedReference[];
   image_generation_config: ImageGenerationConfig;
@@ -765,6 +796,7 @@ export type PipelineEvent =
   | { type: "ad_direction"; index: number; direction: AdDirectorSpec }
   // shared
   | { type: "prompt_built"; index: number; prompt_preview: string }
+  | { type: "prompts_detail"; claude_system: string; claude_user: string; gemini: { index: number; system_instruction: string; user_prompt: string; edit_prompt: string }[] }
   | { type: "render_pass_1"; index: number; success: boolean }
   | { type: "render_pass_2"; index: number; success: boolean }
   | { type: "render_gate"; index: number; verdict: GateVerdict }

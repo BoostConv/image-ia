@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClientReview, getGalleryReviews } from "@/lib/db/queries/galleries";
+import { learnFromRejection } from "@/lib/ai/rejection-learner";
 
 export async function GET(
   _request: NextRequest,
@@ -38,7 +39,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { imageId, verdict, comment } = body;
+    const { imageId, verdict, comment, reviewerName, reviewerEmail } = body;
 
     if (!imageId || !verdict) {
       return NextResponse.json(
@@ -52,7 +53,18 @@ export async function POST(
       galleryId: gallery.id,
       verdict,
       comment,
+      reviewerName,
+      reviewerEmail,
     });
+
+    // Auto-learn from rejections: extract brand rules from rejection comments
+    if (verdict === "rejected" && comment) {
+      learnFromRejection({
+        brandId: gallery.brandId,
+        comment,
+        imageId,
+      }).catch((err) => console.error("[GalleryReviewAPI] learnFromRejection error:", err));
+    }
 
     return NextResponse.json({ id: reviewId });
   } catch (error) {

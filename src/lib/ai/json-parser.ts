@@ -31,6 +31,14 @@ export function extractJsonFromResponse(text: string): string {
   // Remove JS-style comments
   jsonStr = jsonStr.replace(/\/\/[^\n]*/g, "");
 
+  // Fix unescaped control characters inside JSON string values
+  // Replace literal newlines/tabs inside strings with escaped versions
+  jsonStr = jsonStr.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match) => {
+    return match
+      .replace(/\t/g, "\\t")
+      .replace(/\r/g, "\\r");
+  });
+
   // If JSON is truncated (incomplete), try to close it
   try {
     JSON.parse(jsonStr);

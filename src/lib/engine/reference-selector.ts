@@ -16,7 +16,7 @@ import { getLayoutInspirationImage } from "../db/queries/layouts";
 // v4 (Phase 5+): Adds layout inspiration and brand style loading.
 // ============================================================
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = path.join(process.cwd(), "data", "images");
 
 /**
  * Select reference images for a single concept based on its art direction.
@@ -104,17 +104,19 @@ export function selectReferencesBatch(
  */
 function loadImage(imagePath: string): Buffer | null {
   try {
-    // Handle both absolute paths and relative paths (from data/)
+    // Handle both absolute paths and relative paths (from data/images/)
     const fullPath = path.isAbsolute(imagePath)
       ? imagePath
       : path.join(DATA_DIR, imagePath);
 
     if (!fs.existsSync(fullPath)) {
-      console.warn(`[RefSelector] Image not found: ${fullPath}`);
+      console.warn(`[RefSelector] Image NOT found: ${fullPath} (path in DB: "${imagePath}")`);
       return null;
     }
 
-    return fs.readFileSync(fullPath);
+    const buf = fs.readFileSync(fullPath);
+    console.log(`[RefSelector] Loaded image: ${fullPath} (${(buf.length / 1024).toFixed(0)}KB)`);
+    return buf;
   } catch (err) {
     console.warn(`[RefSelector] Failed to load image: ${imagePath}`, err);
     return null;
@@ -230,19 +232,11 @@ export async function selectReferencesV4(
     }
   }
 
-  // Priority 4: Brand style images
-  if (brandStyleImagePaths?.length) {
-    for (const imgPath of brandStyleImagePaths.slice(0, 2)) {
-      const buffer = loadImage(imgPath);
-      if (buffer) {
-        refs.push({
-          path: imgPath,
-          role: "brand_style",
-          buffer,
-        });
-      }
-    }
-  }
+  // Priority 4: Brand style images — SKIP for Gemini
+  // Brand style is captured via DA fingerprint (text-based) in the system instruction.
+  // Sending style images as visual references confuses Gemini — it doesn't know
+  // which image is the product to reproduce vs style to emulate.
+  // The DA fingerprint text is sufficient for style direction.
 
   // Priority 5: Style/mood references from inspirations
   if (direction.reference_strategy.use_style_ref && inspirationPaths?.length) {

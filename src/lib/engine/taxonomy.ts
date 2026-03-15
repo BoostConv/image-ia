@@ -48,23 +48,60 @@ export const FORMAT_FAMILIES: FormatFamily[] = [
 ];
 
 // ─── LAYOUT FAMILY — How the ad is visually composed ────────
+// 31 layouts from Notion reference library, organized in 5 categories.
 
 export type LayoutFamily =
-  | "left_copy_right_product"
-  | "center_hero_top_claim"
+  // Éducatifs
+  | "story_sequence"
+  | "listicle"
+  | "annotation_callout"
+  | "flowchart"
+  // Centrés Image
+  | "hero_image"
+  | "product_focus"
+  | "product_in_context"
+  | "probleme_zoome"
+  | "golden_hour"
+  | "macro_detail"
+  | "action_shot"
+  | "ingredient_showcase"
+  | "scale_shot"
+  | "destruction_shot"
+  | "texture_fill"
+  | "negative_space"
+  // Social Proof
+  | "testimonial_card"
+  | "ugc_style"
+  | "press_as_seen_in"
+  | "wall_of_love"
+  | "statistique_data_point"
+  | "tweet_post_screenshot"
+  // Comparatifs
   | "split_screen"
-  | "card_stack"
-  | "quote_frame"
-  | "badge_cluster"
-  | "vertical_story_stack"
-  | "diagonal_split"
-  | "hero_with_bottom_offer"
-  | "macro_with_side_copy";
+  | "timeline_compare"
+  | "avant_apres"
+  // Centrés Texte
+  | "text_heavy"
+  | "single_word"
+  | "fill_the_blank"
+  | "two_truths"
+  | "manifesto"
+  | "quote_card";
 
 export const LAYOUT_FAMILIES: LayoutFamily[] = [
-  "left_copy_right_product", "center_hero_top_claim", "split_screen",
-  "card_stack", "quote_frame", "badge_cluster", "vertical_story_stack",
-  "diagonal_split", "hero_with_bottom_offer", "macro_with_side_copy",
+  // Éducatifs
+  "story_sequence", "listicle", "annotation_callout", "flowchart",
+  // Centrés Image
+  "hero_image", "product_focus", "product_in_context", "probleme_zoome",
+  "golden_hour", "macro_detail", "action_shot", "ingredient_showcase",
+  "scale_shot", "destruction_shot", "texture_fill", "negative_space",
+  // Social Proof
+  "testimonial_card", "ugc_style", "press_as_seen_in", "wall_of_love",
+  "statistique_data_point", "tweet_post_screenshot",
+  // Comparatifs
+  "split_screen", "timeline_compare", "avant_apres",
+  // Centrés Texte
+  "text_heavy", "single_word", "fill_the_blank", "two_truths", "manifesto", "quote_card",
 ];
 
 // ─── PROOF MECHANISM — How the ad proves its claim ──────────
@@ -106,6 +143,20 @@ export const RUPTURE_STRUCTURES: RuptureStructure[] = [
   "macro_texture", "visual_humor",
 ];
 
+/** Visual definition of each rupture structure — injected in Gemini prompt */
+export const RUPTURE_STRUCTURE_DEFS: Record<RuptureStructure, string> = {
+  hyper_scale: "Produit ou sujet surdimensionné (>50% du cadre), grand-angle, perspective forcée, environnement miniaturisé autour",
+  frozen_explosion: "Éléments en suspension dans l'air, mouvement figé net, particules/gouttes/fragments visibles, impression de vitesse arrêtée",
+  hybrid_fusion: "Fusion de deux mondes visuels dans la même image, transition fluide entre deux univers (nature/tech, organique/géométrique)",
+  dry_levitation: "Objet flottant sans support visible, ombre au sol, fond épuré, sensation d'apesanteur calme",
+  cutaway: "Coupe transversale ou éclatée de l'objet, intérieur visible, structure révélée, rendu technique précis",
+  mirror_symmetry: "Symétrie parfaite ou quasi-parfaite, axe central net, reflet ou dédoublement, équilibre visuel strict",
+  radical_minimalism: "Extrême dépouillement, un seul sujet, fond uniforme, maximum d'espace vide, aucun élément superflu",
+  anachronism: "Mélange d'époques ou de contextes incongrus, objet moderne dans un décor ancien (ou inverse), contraste temporel",
+  macro_texture: "Vue très rapprochée, texture visible en détail (grain, fibre, goutte, matière), profondeur de champ très courte",
+  visual_humor: "Situation inattendue ou absurde, décalage comique, expression exagérée, mise en scène théâtrale",
+};
+
 // ─── GRAPHIC TENSION — Compositional tension ────────────────
 
 export type GraphicTension =
@@ -125,6 +176,20 @@ export const GRAPHIC_TENSIONS: GraphicTension[] = [
   "negative_space_block", "radial_focus", "shadow_play",
   "z_pattern", "color_block_contrast", "verticality", "spotlight",
 ];
+
+/** Visual definition of each graphic tension — injected in Gemini prompt */
+export const GRAPHIC_TENSION_DEFS: Record<GraphicTension, string> = {
+  diagonal_split: "Composition coupée par une diagonale forte, deux zones contrastées, dynamisme et mouvement directionnel",
+  framing_in_frame: "Sujet encadré par un élément de la scène (porte, fenêtre, arche, mains), cadre dans le cadre, profondeur renforcée",
+  low_angle_hero: "Contre-plongée, sujet vu d'en bas, impression de puissance et de grandeur, ciel ou plafond visible",
+  negative_space_block: "Grande zone vide intentionnelle (>40% du cadre), sujet isolé, respiration visuelle, espace pour le texte",
+  radial_focus: "Lignes de composition convergent vers le sujet central, vignettage progressif, attention aspirée vers le centre",
+  shadow_play: "Ombres portées dramatiques, contraste clair-obscur marqué, formes créées par la lumière, atmosphère cinématographique",
+  z_pattern: "Œil guidé en Z : haut-gauche → haut-droite → diagonale → bas-gauche → bas-droite, points d'accroche aux 4 coins",
+  color_block_contrast: "Grandes aplats de couleurs contrastées, séparation nette par la couleur, graphisme fort, impact chromatique",
+  verticality: "Composition verticale dominante, lignes ascendantes, hauteur accentuée, format portrait exploité",
+  spotlight: "Source lumineuse directionnelle unique, sujet éclairé sur fond sombre, effet théâtral, isolation dramatique du sujet",
+};
 
 // ─── RENDER FAMILY — Photo vs Design vs Hybrid ─────────────
 
@@ -237,18 +302,18 @@ export const AWARENESS_JOB_MAP: Record<AwarenessStage, AdJob[]> = {
 // ─── Format Family → Best Layout Families ──────────────────
 
 export const FORMAT_LAYOUT_MAP: Record<FormatFamily, LayoutFamily[]> = {
-  problem_solution: ["split_screen", "left_copy_right_product", "vertical_story_stack"],
-  proof_demo: ["center_hero_top_claim", "macro_with_side_copy", "badge_cluster"],
-  offer_led: ["hero_with_bottom_offer", "center_hero_top_claim", "card_stack"],
-  testimonial: ["quote_frame", "center_hero_top_claim", "vertical_story_stack"],
-  comparison: ["split_screen", "left_copy_right_product", "diagonal_split"],
-  editorial: ["center_hero_top_claim", "macro_with_side_copy", "hero_with_bottom_offer"],
-  ugc_hybrid: ["quote_frame", "vertical_story_stack", "center_hero_top_claim"],
-  visual_metaphor: ["center_hero_top_claim", "hero_with_bottom_offer", "diagonal_split"],
-  objection_crusher: ["left_copy_right_product", "split_screen", "card_stack"],
-  ingredient_spotlight: ["macro_with_side_copy", "center_hero_top_claim", "badge_cluster"],
-  benefit_closeup: ["center_hero_top_claim", "hero_with_bottom_offer", "macro_with_side_copy"],
-  before_after: ["split_screen", "diagonal_split", "vertical_story_stack"],
+  problem_solution: ["probleme_zoome", "split_screen", "annotation_callout", "story_sequence", "text_heavy"],
+  proof_demo: ["hero_image", "macro_detail", "ingredient_showcase", "statistique_data_point", "annotation_callout"],
+  offer_led: ["product_focus", "hero_image", "text_heavy", "single_word"],
+  testimonial: ["testimonial_card", "ugc_style", "wall_of_love", "tweet_post_screenshot", "quote_card"],
+  comparison: ["split_screen", "avant_apres", "timeline_compare", "two_truths", "listicle"],
+  editorial: ["hero_image", "golden_hour", "negative_space", "manifesto", "texture_fill"],
+  ugc_hybrid: ["ugc_style", "testimonial_card", "tweet_post_screenshot", "product_in_context"],
+  visual_metaphor: ["hero_image", "negative_space", "destruction_shot", "scale_shot", "action_shot"],
+  objection_crusher: ["two_truths", "split_screen", "annotation_callout", "fill_the_blank", "listicle"],
+  ingredient_spotlight: ["macro_detail", "ingredient_showcase", "annotation_callout", "product_focus"],
+  benefit_closeup: ["macro_detail", "hero_image", "product_focus", "golden_hour", "action_shot"],
+  before_after: ["avant_apres", "split_screen", "timeline_compare", "story_sequence"],
 };
 
 // ─── Format Family → Best Proof Mechanisms ─────────────────
@@ -315,15 +380,84 @@ export function getCompatibleFormats(
 }
 
 export function getDefaultLayout(format: FormatFamily): LayoutFamily {
-  return FORMAT_LAYOUT_MAP[format][0];
+  const layouts = FORMAT_LAYOUT_MAP[format];
+  return layouts[Math.floor(Math.random() * layouts.length)];
+}
+
+export function getCompatibleLayouts(format: FormatFamily): LayoutFamily[] {
+  return FORMAT_LAYOUT_MAP[format] || LAYOUT_FAMILIES.slice(0, 5);
+}
+
+/**
+ * Format the layout compatibility table for injection into the planner prompt.
+ * Shows which layouts work best for each format_family assigned in the skeletons.
+ */
+export function formatLayoutCompatibilityForPrompt(skeletonFormats: FormatFamily[]): string {
+  // Only show entries relevant to the skeletons in this batch
+  const uniqueFormats = [...new Set(skeletonFormats)];
+
+  const LAYOUT_LABELS: Record<LayoutFamily, string> = {
+    // Éducatifs
+    story_sequence: "Narration en etapes sequentielles",
+    listicle: "Liste numerotee / items empiles",
+    annotation_callout: "Image + callouts / labels pointes",
+    flowchart: "Processus / flux directionnel",
+    // Centrés Image
+    hero_image: "Image dominante plein cadre + headline overlay",
+    product_focus: "Produit centre sur fond clean",
+    product_in_context: "Produit en situation lifestyle",
+    probleme_zoome: "Gros plan sur le probleme",
+    golden_hour: "Ambiance lumiere chaude / mood",
+    macro_detail: "Gros plan extreme / texture",
+    action_shot: "Produit en mouvement / dynamique",
+    ingredient_showcase: "Ingredients disposes autour du produit",
+    scale_shot: "Comparaison de taille avec un objet",
+    destruction_shot: "Impact dramatique / eclatement",
+    texture_fill: "Texture plein cadre",
+    negative_space: "Espace vide genereux + produit minimal",
+    // Social Proof
+    testimonial_card: "Carte temoignage : avatar + citation",
+    ugc_style: "Style contenu utilisateur / amateur",
+    press_as_seen_in: "Logos medias / presse",
+    wall_of_love: "Mur de temoignages multiples",
+    statistique_data_point: "Chiffre cle geant mis en avant",
+    tweet_post_screenshot: "Capture de post social",
+    // Comparatifs
+    split_screen: "50/50 cote a cote",
+    timeline_compare: "Progression temporelle",
+    avant_apres: "Avant / Apres transformation",
+    // Centrés Texte
+    text_heavy: "Copy dominant, produit en support",
+    single_word: "Un mot geant + impact",
+    fill_the_blank: "Phrase a trous interactive",
+    two_truths: "Deux affirmations contrastees",
+    manifesto: "Declaration de marque",
+    quote_card: "Citation encadree",
+  };
+
+  const lines = uniqueFormats.map((format) => {
+    const layouts = FORMAT_LAYOUT_MAP[format];
+    const layoutDescs = layouts
+      .map((l) => `    - "${l}" → ${LAYOUT_LABELS[l] || l}`)
+      .join("\n");
+    return `  ${format}:\n${layoutDescs}`;
+  });
+
+  return `=== LAYOUTS COMPATIBLES PAR FORMAT ===
+Tu DOIS choisir un layout dans la liste compatible avec le format_family assigne.
+Si tu choisis un layout hors liste, il sera remplace automatiquement.
+
+${lines.join("\n\n")}`;
 }
 
 export function getDefaultProof(format: FormatFamily): ProofMechanism {
-  return FORMAT_PROOF_MAP[format][0];
+  const proofs = FORMAT_PROOF_MAP[format];
+  return proofs[Math.floor(Math.random() * proofs.length)];
 }
 
 export function getDefaultRender(format: FormatFamily): RenderFamily {
-  return FORMAT_RENDER_MAP[format][0];
+  const renders = FORMAT_RENDER_MAP[format];
+  return renders[Math.floor(Math.random() * renders.length)];
 }
 
 /**

@@ -6,12 +6,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Check, X, Loader2, Globe, Sparkles, Target, Eye, MessageSquare, Heart, Users } from "lucide-react";
+import { Pencil, Check, X, Loader2, Globe, Sparkles, Target, Eye, MessageSquare, Heart, Users, Upload, Instagram, Facebook, Zap, CheckCircle2, AlertCircle, SkipForward } from "lucide-react";
+import Image from "next/image";
+
+interface AutoAnalysisStatus {
+  website: "pending" | "running" | "done" | "error" | "skipped";
+  instagram: "pending" | "running" | "done" | "error" | "skipped";
+  metaAds: "pending" | "running" | "done" | "error" | "skipped";
+  errors?: Record<string, string>;
+  results?: {
+    colorsFound?: number;
+    fontsFound?: number;
+    imagesDownloaded?: number;
+    adsFound?: number;
+  };
+  startedAt: string;
+  completedAt?: string;
+}
 
 interface BrandIdentity {
   id: string;
   name: string;
   description: string | null;
+  logoPath: string | null;
   mission: string | null;
   vision: string | null;
   positioning: string | null;
@@ -19,6 +36,8 @@ interface BrandIdentity {
   values: string[] | null;
   targetMarket: string | null;
   websiteUrl: string | null;
+  instagramHandle: string | null;
+  facebookPageUrl: string | null;
   colorPalette: {
     primary: string;
     secondary: string;
@@ -38,6 +57,8 @@ export function BrandIdentityEditor({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [currentLogoPath, setCurrentLogoPath] = useState(brand.logoPath);
   const [scrapeResult, setScrapeResult] = useState<{
     name: string;
     description: string;
@@ -61,11 +82,42 @@ export function BrandIdentityEditor({
   const [values, setValues] = useState(brand.values?.join(", ") || "");
   const [targetMarket, setTargetMarket] = useState(brand.targetMarket || "");
   const [websiteUrl, setWebsiteUrl] = useState(brand.websiteUrl || "");
+  const [instagramHandle, setInstagramHandle] = useState(brand.instagramHandle || "");
+  const [facebookPageUrl, setFacebookPageUrl] = useState(brand.facebookPageUrl || "");
   const [primaryColor, setPrimaryColor] = useState(brand.colorPalette?.primary || "#000000");
   const [secondaryColor, setSecondaryColor] = useState(brand.colorPalette?.secondary || "#666666");
   const [accentColor, setAccentColor] = useState(brand.colorPalette?.accent || "#0066ff");
   const [headingFont, setHeadingFont] = useState(brand.typography?.headingFont || "");
   const [bodyFont, setBodyFont] = useState(brand.typography?.bodyFont || "");
+  const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
+  const [autoAnalysisResult, setAutoAnalysisResult] = useState<{
+    status: AutoAnalysisStatus;
+    totalImages: number;
+    newImages: number;
+    hasDaFingerprint: boolean;
+  } | null>(null);
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/brands/${brand.id}/logo`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentLogoPath(data.logoPath);
+      }
+    } catch (err) {
+      console.error("Logo upload error:", err);
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
 
   async function handleScrape() {
     if (!websiteUrl.trim()) return;
@@ -106,6 +158,58 @@ export function BrandIdentityEditor({
     }
   }
 
+  async function handleAutoAnalyze() {
+    // Save sources first
+    try {
+      await fetch("/api/brands", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: brand.id,
+          websiteUrl: websiteUrl || null,
+          instagramHandle: instagramHandle || null,
+          facebookPageUrl: facebookPageUrl || null,
+        }),
+      });
+    } catch {
+      // Continue even if save fails
+    }
+
+    setIsAutoAnalyzing(true);
+    setAutoAnalysisResult(null);
+    try {
+      const res = await fetch(`/api/brands/${brand.id}/auto-analyze`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoAnalysisResult(data);
+        // Reload the page to show updated data
+        if (data.status?.website === "done") {
+          window.location.reload();
+        }
+      } else {
+        const err = await res.json();
+        setAutoAnalysisResult({
+          status: {
+            website: "error",
+            instagram: "error",
+            metaAds: "error",
+            errors: { general: err.error || "Erreur inconnue" },
+            startedAt: new Date().toISOString(),
+          },
+          totalImages: 0,
+          newImages: 0,
+          hasDaFingerprint: false,
+        });
+      }
+    } catch (err) {
+      console.error("Auto-analyze error:", err);
+    } finally {
+      setIsAutoAnalyzing(false);
+    }
+  }
+
   async function handleSave() {
     setIsSaving(true);
     try {
@@ -128,6 +232,8 @@ export function BrandIdentityEditor({
           values: valuesArray.length > 0 ? valuesArray : null,
           targetMarket: targetMarket || null,
           websiteUrl: websiteUrl || null,
+          instagramHandle: instagramHandle || null,
+          facebookPageUrl: facebookPageUrl || null,
           colorPalette: {
             primary: primaryColor,
             secondary: secondaryColor,
@@ -158,6 +264,8 @@ export function BrandIdentityEditor({
     setValues(brand.values?.join(", ") || "");
     setTargetMarket(brand.targetMarket || "");
     setWebsiteUrl(brand.websiteUrl || "");
+    setInstagramHandle(brand.instagramHandle || "");
+    setFacebookPageUrl(brand.facebookPageUrl || "");
     setPrimaryColor(brand.colorPalette?.primary || "#000000");
     setSecondaryColor(brand.colorPalette?.secondary || "#666666");
     setAccentColor(brand.colorPalette?.accent || "#0066ff");
@@ -178,6 +286,51 @@ export function BrandIdentityEditor({
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Logo */}
+          <div className="flex items-center gap-4">
+            <label className="relative group cursor-pointer">
+              {currentLogoPath ? (
+                <div className="relative h-16 w-16 rounded-lg overflow-hidden border">
+                  <Image
+                    src={`/api/images/${encodeURIComponent(currentLogoPath)}`}
+                    alt="Logo"
+                    fill
+                    className="object-contain"
+                    sizes="64px"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    {isUploadingLogo ? (
+                      <Loader2 className="h-4 w-4 text-white animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4 text-white" />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-16 w-16 rounded-lg border border-dashed flex items-center justify-center hover:border-primary/50 transition-colors">
+                  {isUploadingLogo ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Upload className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleLogoUpload}
+                disabled={isUploadingLogo}
+              />
+            </label>
+            <div>
+              <p className="text-sm font-medium">{brand.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {currentLogoPath ? "Cliquez pour changer le logo" : "Ajouter un logo"}
+              </p>
+            </div>
+          </div>
+
           {description && (
             <p className="text-sm text-muted-foreground">{description}</p>
           )}
@@ -279,10 +432,24 @@ export function BrandIdentityEditor({
             </div>
           )}
 
-          {websiteUrl && (
+          {(websiteUrl || instagramHandle || facebookPageUrl) && (
             <div className="space-y-1">
-              <label className="text-sm font-medium">Site web</label>
-              <p className="text-sm text-muted-foreground">{websiteUrl}</p>
+              <label className="text-sm font-medium">Sources</label>
+              {websiteUrl && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Globe className="h-3 w-3" /> {websiteUrl}
+                </p>
+              )}
+              {instagramHandle && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Instagram className="h-3 w-3" /> {instagramHandle}
+                </p>
+              )}
+              {facebookPageUrl && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Facebook className="h-3 w-3" /> {facebookPageUrl}
+                </p>
+              )}
             </div>
           )}
         </CardContent>
@@ -310,62 +477,108 @@ export function BrandIdentityEditor({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Website URL + Scrape button */}
-        <div className="space-y-2 p-3 bg-muted/50 rounded-lg border border-dashed">
+        {/* Sources & Auto-analyze */}
+        <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-dashed">
           <label className="text-sm font-medium flex items-center gap-1.5">
-            <Globe className="h-3.5 w-3.5" />
-            Site web de la marque
+            <Zap className="h-3.5 w-3.5" />
+            Sources de la marque
           </label>
-          <div className="flex gap-2">
+
+          {/* Website */}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Globe className="h-3 w-3" />
+              Site web
+            </label>
             <Input
               value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
               placeholder="https://www.example.com"
             />
-            <Button
-              onClick={handleScrape}
-              disabled={isScraping || !websiteUrl.trim()}
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-            >
-              {isScraping ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Analyser le site
-            </Button>
           </div>
+
+          {/* Instagram */}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Instagram className="h-3 w-3" />
+              Instagram
+            </label>
+            <Input
+              value={instagramHandle}
+              onChange={(e) => setInstagramHandle(e.target.value)}
+              placeholder="@nom_de_la_marque"
+            />
+          </div>
+
+          {/* Facebook page */}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Facebook className="h-3 w-3" />
+              Page Facebook (Meta Ad Library)
+            </label>
+            <Input
+              value={facebookPageUrl}
+              onChange={(e) => setFacebookPageUrl(e.target.value)}
+              placeholder="https://www.facebook.com/nom_de_la_marque"
+            />
+          </div>
+
+          {/* Auto-analyze button */}
+          <Button
+            onClick={handleAutoAnalyze}
+            disabled={isAutoAnalyzing || (!websiteUrl.trim() && !instagramHandle.trim() && !facebookPageUrl.trim())}
+            variant="secondary"
+            className="w-full"
+          >
+            {isAutoAnalyzing ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="mr-1.5 h-4 w-4" />
+            )}
+            {isAutoAnalyzing ? "Analyse en cours..." : "Analyser la marque"}
+          </Button>
           <p className="text-[10px] text-muted-foreground">
-            L&apos;IA analyse le site pour extraire mission, vision, positionnement, couleurs, polices et ton
+            L&apos;IA scrape les sources, extrait couleurs, polices, visuels et analyse la direction artistique
           </p>
 
-          {/* Scrape result feedback */}
-          {scrapeResult && (
+          {/* Auto-analyze result */}
+          {autoAnalysisResult && (
             <div className="mt-2 p-2.5 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800 space-y-2">
               <p className="text-xs text-green-700 dark:text-green-400 font-medium flex items-center gap-1">
                 <Sparkles className="h-3 w-3" />
-                Analyse terminee — champs pre-remplis
+                Analyse terminee
               </p>
-              {scrapeResult.positioning && (
+              <div className="space-y-1">
+                {(["website", "instagram", "metaAds"] as const).map((source) => {
+                  const st = autoAnalysisResult.status[source];
+                  const label = source === "website" ? "Site web" : source === "instagram" ? "Instagram" : "Meta Ad Library";
+                  return (
+                    <div key={source} className="flex items-center gap-1.5 text-[11px]">
+                      {st === "done" ? (
+                        <CheckCircle2 className="h-3 w-3 text-green-600" />
+                      ) : st === "error" ? (
+                        <AlertCircle className="h-3 w-3 text-red-500" />
+                      ) : st === "skipped" ? (
+                        <SkipForward className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      <span className={st === "error" ? "text-red-600" : st === "skipped" ? "text-muted-foreground" : "text-green-600"}>
+                        {label}: {st === "done" ? "OK" : st === "error" ? (autoAnalysisResult.status.errors?.[source] || "Erreur") : st === "skipped" ? "Non configure" : "..."}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {autoAnalysisResult.newImages > 0 && (
                 <p className="text-[11px] text-green-600">
-                  <span className="font-medium">Positionnement :</span> {scrapeResult.positioning}
+                  {autoAnalysisResult.newImages} visuels telecharges
                 </p>
               )}
-              {scrapeResult.tone && (
+              {autoAnalysisResult.hasDaFingerprint && (
                 <p className="text-[11px] text-green-600">
-                  <span className="font-medium">Ton :</span> {scrapeResult.tone}
+                  Fingerprint DA genere
                 </p>
-              )}
-              {scrapeResult.keyMessages?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {scrapeResult.keyMessages.map((msg, i) => (
-                    <Badge key={i} variant="secondary" className="text-[9px]">
-                      {msg}
-                    </Badge>
-                  ))}
-                </div>
               )}
             </div>
           )}

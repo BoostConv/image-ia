@@ -23,18 +23,20 @@ export async function renderConcept(
   const primaryRef = getPrimaryReference(prompt.selected_reference_images);
   const aspectRatio = prompt.image_generation_config.aspect_ratio as AspectRatio;
 
-  // Collect all reference image buffers for multi-ref support
-  const refBuffers = prompt.selected_reference_images
-    .filter((r) => r.buffer)
-    .map((r) => r.buffer!);
+  // Collect all reference image buffers AND their roles for annotation
+  const refsWithBuffers = prompt.selected_reference_images.filter((r) => r.buffer);
+  const refBuffers = refsWithBuffers.map((r) => r.buffer!);
+  const refRoles = refsWithBuffers.map((r) => r.role);
 
   // ─── PASS 1: Base composition ──────────────────────────────
   console.log(`[Renderer] Pass 1 for concept ${index + 1}...`);
 
   const pass1Result = await generateImage({
     prompt: prompt.prompt_for_model,
+    systemInstruction: prompt.system_instruction,
     aspectRatio,
     referenceImages: refBuffers.length > 0 ? refBuffers : undefined,
+    referenceImageRoles: refBuffers.length > 0 ? refRoles : undefined,
     referenceImage: refBuffers.length === 0 ? primaryRef?.buffer : undefined,
   });
 

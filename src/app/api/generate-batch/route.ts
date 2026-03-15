@@ -41,6 +41,9 @@ export async function POST(request: NextRequest) {
       renderStrategy = "complete_ad",
       selectedImagePaths,
       additionalRefImages,
+      forcedLayoutFamilies,
+      creativityLevel = 2,
+      promptMode = "standard",
     } = body as {
       brandId: string;
       productId?: string;
@@ -52,6 +55,9 @@ export async function POST(request: NextRequest) {
       renderStrategy?: string;
       selectedImagePaths?: string[];
       additionalRefImages?: string[];
+      forcedLayoutFamilies?: string[];
+      creativityLevel?: 1 | 2 | 3;
+      promptMode?: "standard" | "lean";
     };
 
     if (!brandId) {
@@ -156,6 +162,9 @@ export async function POST(request: NextRequest) {
         identiteFondamentale: brand.identiteFondamentale || undefined,
         positionnementStrategique: brand.positionnementStrategique || undefined,
         tonCommunication: brand.tonCommunication || undefined,
+        brandRules: brand.brandRules || undefined,
+        brandStylePolicy: brand.brandStylePolicy || undefined,
+        daFingerprint: brand.daFingerprint || undefined,
       },
       product: product
         ? {
@@ -201,6 +210,12 @@ export async function POST(request: NextRequest) {
         : undefined,
       // Brand style images (Phase 5+)
       brandStyleImagePaths: brand.brandStyleImages || undefined,
+      // User-forced layout families
+      forcedLayoutFamilies: forcedLayoutFamilies?.length ? forcedLayoutFamilies : undefined,
+      // Creativity level (1=classique, 2=creatif, 3=experimental)
+      creativityLevel: creativityLevel as 1 | 2 | 3,
+      // Prompt mode (standard = full pipeline, lean = minimal for better Gemini creativity)
+      promptMode: promptMode as "standard" | "lean",
     };
 
     const encoder = new TextEncoder();
@@ -209,6 +224,13 @@ export async function POST(request: NextRequest) {
         function send(data: Record<string, unknown>) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         }
+
+        // Capture prompts for saving in creativeData
+        let capturedPromptsDetail: {
+          claude_system: string;
+          claude_user: string;
+          gemini: { index: number; system_instruction: string; user_prompt: string; edit_prompt: string }[];
+        } | null = null;
 
         try {
           const result = await runPipeline({
@@ -228,10 +250,27 @@ export async function POST(request: NextRequest) {
                   break;
 
                 case "concepts_generated":
+                  // Send v3 concepts with full taxonomy for UI display
+                  send({
+                    type: "concepts",
+                    concepts: event.concepts.map((c: any) => ({
+                      concept: c.visual_device || "",
+                      headline: c.headline || "",
+                      cta: c.cta || "",
+                      angle: `${c.format_family}__${c.visual_style}`,
+                      level: c.awareness_stage || "",
+                      emotion: `${c.marketing_lever}: ${c.format_family} — ${c.render_family}`,
+                      layout_family: c.layout_family || "",
+                      format_family: c.format_family || "",
+                      render_family: c.render_family || "",
+                      ad_job: c.ad_job || "",
+                      product_role: c.product_role || "",
+                    })),
+                  });
                   send({
                     type: "phase",
                     phase: "B",
-                    message: `${event.concepts.length} concepts générés (sur-génération pour filtrage)`,
+                    message: `${event.concepts.length} concepts générés`,
                   });
                   break;
 
@@ -244,18 +283,7 @@ export async function POST(request: NextRequest) {
                   break;
 
                 case "briefs_generated":
-                  // Bridge to old "concepts" format for UI compatibility
-                  send({
-                    type: "concepts",
-                    concepts: event.briefs.map((b) => ({
-                      concept: b.single_visual_idea.slice(0, 80),
-                      angle: b.creative_archetype,
-                      level: b.awareness_level,
-                      emotion: b.emotional_mechanic,
-                      renderMode: b.renderMode,
-                      overlayIntent: b.overlayIntent,
-                    })),
-                  });
+                  // v3 concepts already sent above — skip v2 bridge
                   break;
 
                 case "prompt_built":
@@ -264,6 +292,20 @@ export async function POST(request: NextRequest) {
                     current: event.index + 1,
                     total: count,
                     concept: `Concept ${event.index + 1} prêt`,
+                  });
+                  break;
+
+                case "prompts_detail":
+                  capturedPromptsDetail = {
+                    claude_system: event.claude_system,
+                    claude_user: event.claude_user,
+                    gemini: event.gemini,
+                  };
+                  send({
+                    type: "prompts_detail",
+                    claude_system: event.claude_system,
+                    claude_user: event.claude_user,
+                    gemini: event.gemini,
                   });
                   break;
 
@@ -404,6 +446,11 @@ export async function POST(request: NextRequest) {
                   gateVerdict: renderGate as unknown as Record<string, unknown>,
                   compositionGateVerdict: compositionGateVerdict as unknown as Record<string, unknown>,
                   prompt_used: render.base_image.prompt_used,
+                  // Full prompts for debugging
+                  gemini_system_instruction: (capturedPromptsDetail as any)?.gemini?.find((g: { index: number }) => g.index === i)?.system_instruction,
+                  gemini_edit_prompt: (capturedPromptsDetail as any)?.gemini?.find((g: { index: number }) => g.index === i)?.edit_prompt,
+                  claude_system_prompt: (capturedPromptsDetail as any)?.claude_system,
+                  claude_user_prompt: (capturedPromptsDetail as any)?.claude_user,
                   // ── v3 flat taxonomy fields (for learning & analytics) ──
                   format_family: concept?.format_family,
                   layout_family: concept?.layout_family,

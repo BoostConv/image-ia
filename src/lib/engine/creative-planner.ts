@@ -13,6 +13,7 @@ import type { BrandStylePolicy } from "./brand-style-policy";
 import { assignRenderProperties } from "./render-mode";
 import { callClaudeWithRetry } from "../ai/claude-retry";
 import { extractJsonFromResponse } from "@/lib/ai/json-parser";
+import { smartTruncateHeadline } from "./headline-utils";
 import { getKnowledgeForStage } from "./knowledge";
 import type { AwarenessLevel } from "./knowledge";
 import {
@@ -28,9 +29,12 @@ import {
   STYLE_MODES,
   AWARENESS_STAGES,
   MARKETING_LEVERS,
+  FORMAT_LAYOUT_MAP,
   formatTaxonomyForPrompt,
   formatTaxonomyCompactForPrompt,
+  formatLayoutCompatibilityForPrompt,
   getCompatibleFormats,
+  getCompatibleLayouts,
   getDefaultLayout,
   getDefaultProof,
   getDefaultRender,
@@ -52,6 +56,10 @@ import type {
 import { formatPolicyForPrompt } from "./brand-style-policy";
 import type { CreativeMemory } from "../db/queries/creative-memory";
 import { formatCreativeMemoryDirective } from "../db/queries/creative-memory";
+import type { FewShotExample } from "../db/queries/creative-memory";
+import { formatFewShotDirective } from "../db/queries/creative-memory";
+import type { LayoutAnalysis } from "../db/schema";
+import { formatLayoutAnalysisCompact } from "./layout-analyzer";
 import type { BrandDAFingerprint } from "./brand-da-analyzer";
 import { formatDAFingerprintForPrompt } from "./brand-da-analyzer";
 
@@ -82,23 +90,28 @@ interface ConceptSkeleton {
   ad_job: AdJob;
   marketing_lever: MarketingLever;
   format_family: FormatFamily;
+  layout_family: LayoutFamily;
   awareness_stage: AwarenessStage;
 }
 
 /**
  * Generate diverse strategic skeletons for a batch.
- * Ensures each concept has a different ad_job + marketing_lever combo.
+ * Ensures each concept has a different ad_job + marketing_lever + layout combo.
+ * Layouts are pre-assigned to guarantee diversity across the batch.
+ * If forcedLayouts is provided, those layouts are used (round-robin if fewer than count).
  */
 function generateSkeletons(
   count: number,
-  awareness: AwarenessStage
+  awareness: AwarenessStage,
+  forcedLayouts?: LayoutFamily[],
+  memory?: CreativeMemory,
 ): ConceptSkeleton[] {
-  // Shuffle ad jobs
-  const jobs = shuffle([...AD_JOBS]);
-  // Shuffle marketing levers
-  const levers = shuffle([...MARKETING_LEVERS]);
+  // Sort jobs and levers by LEAST RECENTLY USED (memory-aware)
+  const jobs = sortByLeastUsed([...AD_JOBS], memory?.ad_jobs);
+  const levers = sortByLeastUsed([...MARKETING_LEVERS], memory?.marketing_levers);
 
   const skeletons: ConceptSkeleton[] = [];
+  const usedLayouts = new Set<LayoutFamily>();
 
   for (let i = 0; i < count; i++) {
     const job = jobs[i % jobs.length];
@@ -106,18 +119,57 @@ function generateSkeletons(
 
     // Get compatible formats for this job + awareness
     const compatFormats = getCompatibleFormats(job, awareness);
-    // Pick a format — cycle through compatible ones
     const format = compatFormats[i % compatFormats.length];
+
+    let layout: LayoutFamily;
+
+    if (forcedLayouts && forcedLayouts.length > 0) {
+      // User forced specific layouts — round-robin through them
+      layout = forcedLayouts[i % forcedLayouts.length];
+    } else {
+      // Auto-pick: prioritize layouts NOT used recently (memory-aware)
+      const compatLayouts = sortByLeastUsed(
+        [...getCompatibleLayouts(format)],
+        memory?.layout_families,
+      );
+      layout = compatLayouts[0]; // fallback (least used)
+      for (const candidate of compatLayouts) {
+        if (!usedLayouts.has(candidate)) {
+          layout = candidate;
+          break;
+        }
+      }
+    }
+    usedLayouts.add(layout);
 
     skeletons.push({
       ad_job: job,
       marketing_lever: lever,
       format_family: format,
+      layout_family: layout,
       awareness_stage: awareness,
     });
   }
 
   return skeletons;
+}
+
+/**
+ * Sort items by least recently used based on creative memory.
+ * Items with 0 or no usage come first (shuffled), then ascending by usage count.
+ */
+function sortByLeastUsed<T extends string>(items: T[], usageMap?: Record<string, number>): T[] {
+  if (!usageMap || Object.keys(usageMap).length === 0) {
+    return shuffle(items);
+  }
+  // Split into never-used and used
+  const neverUsed = items.filter(item => !usageMap[item]);
+  const used = items.filter(item => usageMap[item]);
+  // Shuffle never-used for variety, sort used ascending
+  return [
+    ...shuffle(neverUsed),
+    ...used.sort((a, b) => (usageMap[a] || 0) - (usageMap[b] || 0)),
+  ];
 }
 
 // ─── MAIN PLANNER v3 ───────────────────────────────────────
@@ -141,138 +193,165 @@ export async function planConcepts(
   hasProductImages?: boolean,
   memory?: CreativeMemory,
   daFingerprint?: BrandDAFingerprint,
-): Promise<ConceptSpec[]> {
+  forcedLayoutFamilies?: LayoutFamily[],
+  fewShotExamples?: FewShotExample[],
+  layoutAnalyses?: Map<string, LayoutAnalysis>,
+  creativityLevel?: 1 | 2 | 3,
+): Promise<{ concepts: ConceptSpec[]; claudeSystemPrompt: string; claudeUserPrompt: string }> {
   const client = getClient();
   const awareness = (context.awareness_level || "problem_aware") as AwarenessStage;
+  const level = creativityLevel || 2;
 
-  // Over-generate for critic filtering (minimum 3)
-  const generateCount = Math.max(3, count * 2);
+  // Generate exactly the requested count (no over-generation)
+  const generateCount = count;
 
-  // Pre-assign strategic skeletons
-  const skeletons = generateSkeletons(generateCount, awareness);
+  // Creativity level directives
+  const creativityDirective = level === 1
+    ? `## MODE CLASSIQUE (niveau 1)
+- Rester dans les codes publicitaires prouves et efficaces.
+- Privilegier la clarte, la lisibilite et le professionnalisme.
+- Pas de prise de risque creative — fiabilite maximale.
+- Chaque concept doit ressembler a une pub Meta classique qui performe.
+- Utiliser des formats et des angles EPROUVES dans la categorie.`
+    : level === 3
+    ? `## MODE EXPERIMENTAL (niveau 3)
+- AUCUNE LIMITE CREATIVE. Oser l'inattendu, le jamais-vu, le provocant (dans le respect de la marque).
+- Chaque concept DOIT surprendre — si ca ressemble a une pub deja vue, RECOMMENCER.
+- Explorer des METAPHORES VISUELLES audacieuses, des contrastes forts, des emotions inhabituelles.
+- Melanger les registres : humour noir + luxe, naivete + tech, chaos + minimalisme.
+- AU MOINS 2 concepts sur ${generateCount} doivent etre "experimentaux" : angle ou visual_device jamais vu dans cette categorie.
+- Emprunter des codes visuels a D'AUTRES INDUSTRIES : mode, art contemporain, cinema, architecture, gastronomie, sport.
+- Les headlines peuvent etre provocantes, decalees, ironiques.
+- Le customer_insight doit toucher une verite PROFONDE et inattendue.`
+    : `## MODE CREATIF (niveau 2)
+- Equilibrer performance prouvee et originalite.
+- AU MOINS 1 concept sur ${generateCount} doit etre "audacieux" : angle inattendu ou visual_device surprenant.
+- Varier les registres emotionnels : ne pas rester dans le meme ton.
+- Explorer des scenes visuelles inedites tout en restant comprehensible en 1 seconde.`;
+
+  console.log(`[ConceptPlanner] Creativity level: ${level} (${level === 1 ? "classique" : level === 3 ? "experimental" : "creatif"})`);
+
+  // Pre-assign strategic skeletons (respect user-forced layouts if any)
+  const skeletons = generateSkeletons(generateCount, awareness, forcedLayoutFamilies, memory);
   const skeletonDescription = skeletons
     .map(
       (s, i) =>
-        `Concept ${i + 1}: ad_job="${s.ad_job}", marketing_lever="${s.marketing_lever}", format_family="${s.format_family}"`
+        `Concept ${i + 1}: ad_job="${s.ad_job}", marketing_lever="${s.marketing_lever}", format_family="${s.format_family}", layout_family="${s.layout_family}"`
     )
     .join("\n");
 
-  const response = await callClaudeWithRetry(() =>
-    client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8000,
-      system: `Tu es un expert senior en creation d'ads statiques pour le e-commerce DTC. Tu combines les competences d'un directeur artistique, d'un copywriter direct-response, et d'un stratege marketing. Tu produis des ads 'banger' — des ads qui arretent le scroll, creent une emotion, et generent du clic.
+  // Build layout compatibility guide for the prompt
+  const skeletonFormats = skeletons.map(s => s.format_family);
+  const layoutCompatibility = formatLayoutCompatibilityForPrompt(skeletonFormats);
 
-## TES PRINCIPES FONDATEURS (Mark Morgan Ford + Hopkins + Makepeace)
+  // Build brand context block (BEFORE rules, so Claude frames creativity within brand)
+  const brandContextBlock = [
+    formatPolicyForPrompt(policy),
+    daFingerprint ? `=== IDENTITE VISUELLE OBSERVEE ===\n${formatDAFingerprintForPrompt(daFingerprint)}\n→ Respecter le socle visuel observe. Explorer dans les limites de la marque.` : "",
+  ].filter(Boolean).join("\n\n");
 
-1. LA PUB C'EST DE LA VENTE, PAS DE LA LITTERATURE (Hopkins) — Pas de formulations poetiques. Un vendeur qui parle a une personne. Chaque mot doit vendre, pas impressionner.
-2. SPECIFIQUE, CONCRET, ZERO DEDUCTION — Si le prospect doit reflechir pour comprendre, le copy est rate. Compris en 1 seconde.
-3. EMOTION D'ABORD, LOGIQUE ENSUITE — La headline fait RESSENTIR. Le sous-texte INFORME. Toujours dans cet ordre.
-4. DON'T FORCE. TEMPT. — Ne pas lister des arguments. Faire ressentir l'experience. Le visuel et le copy tentent, pas forcent.
-5. LE MEILLEUR CONCEPT N'A PAS BESOIN DE BEAUCOUP DE MOTS — Si un concept a besoin de 50+ mots, il n'est pas fait pour le format static ad.
+  const claudeSystemPrompt = `Tu es un directeur creatif senior specialise en ads statiques Meta/Instagram. Tu combines direction artistique, copywriting direct-response et strategie marketing.
 
-## TA METHODE : CONCEPT-FIRST (Pipeline v3)
+PRIORITES (en cas de conflit) : 1. Clarte en 1 seconde > 2. Emotion headline > 3. Originalite visuelle > 4. Diversite batch
 
-Tu DOIS penser dans cet ORDRE :
-1. **AD_JOB** : Quelle est la MISSION de cette pub dans le funnel ? (scroll_stop, educate, prove, handle_objection, convert_offer)
-2. **FORMAT_FAMILY** : Quel BLUEPRINT pub sert cette mission ? (comparaison, temoignage, offre, etc.)
-3. **PROOF_MECHANISM** : Comment cette pub PROUVE sa promesse ? (ingredient, data, social_proof, etc.)
-4. **VISUAL_DEVICE** : Quelle SCENE visuelle incarne tout ca ?
+## METHODE
+AD_JOB (mission funnel) → FORMAT_FAMILY (structure pub) → PROOF_MECHANISM (comment prouver) → VISUAL_DEVICE (scene visuelle). Emotion d'abord (headline), logique ensuite (sous-texte).
 
-## REGLES ABSOLUES
+${brandContextBlock ? `${brandContextBlock}\n` : ""}${creativityDirective}
 
-1. **visual_device** = SCENE VISUELLE PURE en 3-4 phrases. Decris UNIQUEMENT ce qu'on VOIT.
-   INTERDIT : texte, typographie, headlines, badges, fleches, chiffres, prix, CTA, labels.
-   Le Compositeur ajoutera le texte APRES.
+## REGLES
+1. **visual_device** = SCENE VISUELLE PURE (3-4 phrases). Uniquement ce qu'on VOIT. JAMAIS de texte, typo, badges, fleches, chiffres, graphiques, infographies. Gemini genere mal les elements graphiques complexes.
+2. **headline** = FRANCAIS, 15 mots MAX (viser 5-8). Phrase COMPLETE — JAMAIS coupee. INTERDIT de finir sur un article/preposition (de, du, des, a, la, le, les, un, une, que, qui, pour, avec, en, au, sur, par, son, sa, ses, votre, ton, ta). Specifique au produit ET au persona, ancre dans le PRESENT du client. Pas de claims medicales, stats inventees, ni dates.
+3. **belief_shift** = "DE '[croyance actuelle]' → VERS '[nouvelle croyance]'" — precis et specifique.
+4. **customer_insight** = Verite sur la VIE du client, pas un benefice produit.
+5. **cta** = 2-5 mots, action concrete. JAMAIS "Acheter maintenant", "En savoir plus".
+6. Chaque concept = RADICALEMENT different : levier, scene, emotion, layout.
+7. Composition SIMPLE : max 3 elements visuels, espace negatif pour le texte, pas de split-screen complexe.
+8. Champs taxonomiques : TOUJOURS choisir dans les listes fermees ci-dessous.
 
-2. **belief_shift** = La transformation mentale PRECISE.
-   Format : "DE '[croyance actuelle]' → VERS '[nouvelle croyance]'"
-   EXCELLENT : "DE 'Les bonbons bio sont fades' → VERS 'REBELLE prouve que bio = explosion de saveurs'"
-   NUL : "DE 'pas bien' → VERS 'bien'"
+## UTILISATION DES DONNEES CONTEXTUELLES
+- DESIRS PERSONA : L1-L2 = headlines/CTA concrets | L3 = emotion du visual_device | L4-L5 = belief_shift profond
+- PROBLEMES DUR : scroll_stop → le plus DOULOUREUX | handle_objection → le plus URGENT | educate → le plus RECONNU
+- TRANSFORMATIONS : prove/avant_apres → la plus visuelle | desire → headline sur l'APRES | fear → headline sur l'AVANT
+- CITATIONS CLIENTS : inspiration pour headlines (reformuler, pas copier)
+- PSYCHOLOGIE ACHAT : handle_objection → adresser la DEFENSE | prove → TRUST BUILDERS | scroll_stop → contourner les RESISTANCES
+- PROFIL LINGUISTIQUE : utiliser les trigger words et le ton dans headlines et CTA
+- SOCLE STRATEGIQUE : quand present, PRIME sur la promesse/preuve du produit
 
-3. **customer_insight** = Une VERITE sur la VIE du client, PAS un benefice produit.
-   Framework: Reponds mentalement a: "Qu'est-ce qui empeche ce persona de dormir a 3h du matin?"
-
-4. **Chaque concept = RADICALEMENT different** : levier different, scene differente, emotion differente.
-   Diversifier: patterns, sous-types, mecanismes headline, layouts, registres emotionnels.
-
-5. **Tous les champs taxonomiques DOIVENT venir des listes fermees ci-dessous.**
-
-## LES 13 MECANISMES DE HEADLINE
-
-1. Interpellation directe (probleme nomme): "Ton ado transpire et les deos ne tiennent pas"
-2. Situation Recognition (moment de vie precis): "15h. Tu as bu 4 cafes et 0 eau."
-3. Contraste Avant/Apres: "A gauche ce que tu utilises. A droite ce que ta peau merite."
-4. Loss Aversion / Cout cache: "Ta bouteille plastique met 450 ans a disparaitre."
-5. Social Proof: "4 millions d'hommes ont lache leur gel douche."
-6. Question Hook: "Retourne ton gel douche. Tu comprends quelque chose?"
-7. Revelation / Education: "43 ingredients dans ton gel douche. Tu en connais zero."
-8. Urgence / Rarete: "Derniere chance — edition limitee."
-9. Resultat specifique: "Son corps change. Son deodorant devrait suivre."
-10. Identite / Appartenance: "En soiree, personne ne sait que c'est de l'eau."
-11. Objection Buster: "Pas besoin d'alcool pour avoir de la gueule a table."
-12. Provocation / Defi: "Tu tracks tes macros mais tu bois de la Cristaline."
-13. Disruption / Reverse Psychology: "Ton gel douche fait son job. C'est juste qu'il ne fait QUE ca."
-
-## COPY REQUIREMENTS (Phase 5+ — FRANCAIS OBLIGATOIRE)
-
-=== HEADLINE (obligatoire) ===
-- FRANCAIS uniquement
-- Budget: 10-15 mots max, 1-2 lignes visuellement
-- Job: Arreter le scroll en 1 seconde, faire RESSENTIR (feel test de Makepeace)
-- DOIT nommer le probleme, la situation, ou le desir EXPLICITEMENT
-- Specifique a CE persona — si le copy peut s'appliquer a n'importe qui, il ne parle a personne
-- Se suffit a elle-meme sans contexte ni visuel
-
-=== SUBTITLE (optionnel) ===
-- FRANCAIS uniquement
-- Budget: 15-25 mots max
-- Job: Repondre aux questions: c'est quoi? Pour qui? Fait avec quoi? Ca fait quoi?
-- Minimum: dire ce qu'est le produit + un benefice concret
-- DOIT REPONDRE au hook de la headline (meme theme, meme champ lexical)
-
-=== CTA (obligatoire) ===
-- FRANCAIS uniquement
-- 2-5 mots — action concrete, PAS un slogan
-- JAMAIS "Acheter maintenant", "Cliquez ici", "En savoir plus"
-- JAMAIS de CTA-slogan ("Sois celle qui a compris", "Embrasse le changement")
-- BON: "Je veux essayer", "Voir le resultat", "C'est pour moi", "Decouvrir le secret"
-
-=== BUDGET TOTAL ===
-- headline + sous-texte + CTA = 20-35 mots MAXIMUM
-- Si au-dessus de 35 mots → couper ou changer de concept
-- La clarte ne se sacrifie JAMAIS pour la concision
-
-## FORMULATIONS INTERDITES
-
-- Formulations poetiques/abstraites: "Le rituel naturel qui lui donne l'assurance qu'il merite"
-- Copy qui necessite une deduction du prospect
-- Copy generique applicable a n'importe quel produit
-- Sous-texte deconnecte du hook (le sous-texte REPOND a la headline)
-- Mots dilutifs: peut, pourrait, devrait, a le potentiel de, cherche a
-- Tirets longs (—) dans le copy — utiliser point ou virgule
-- Utilisation mecanique des arguments (note Yuka, etoiles dans CHAQUE ad)
+## EXEMPLE DE BON CONCEPT
+{
+  "ad_job": "scroll_stop",
+  "format_family": "before_after",
+  "marketing_lever": "desire",
+  "layout_family": "split_comparison",
+  "render_family": "photo_led",
+  "human_presence": "hand",
+  "visual_device": "A gauche, une main fatiguee tient un cafe froid dans un bureau gris et encombre. A droite, la meme main, energique, tient le produit dans une cuisine lumineuse et rangee, baignee de lumiere matinale dorée.",
+  "headline": "Tu merites mieux que ton 3eme cafe",
+  "cta": "Essayer le vrai boost",
+  "belief_shift": "DE 'le cafe suffit pour tenir' → VERS 'il existe une energie saine qui dure'",
+  "customer_insight": "Il sait que le cafe est un pansement, mais il n'a jamais trouve d'alternative qui tient vraiment sa promesse"
+}
+→ Pourquoi ca marche : scene visuelle SIMPLE (2 zones, 1 contraste), headline ancrée dans le quotidien du client, belief_shift precis, customer_insight = verite de VIE (pas benefice produit).
 
 ${formatTaxonomyCompactForPrompt()}
 
-${formatPolicyForPrompt(policy)}
+Reponds UNIQUEMENT en JSON valide (array de ${generateCount} objets), sans texte avant ou apres.`;
 
-Reponds UNIQUEMENT en JSON valide (array de ${generateCount} objets), sans texte avant ou apres.`,
-      messages: [
-        {
-          role: "user",
-          content: `Cree ${generateCount} concepts publicitaires structures.
+  // ── Deduplicate brand rules ──
+  // RED LINES, RÈGLES CONCEPT, and RÈGLES COPY can overlap (global rules are merged into all 3).
+  // Deduplicate into a single block to avoid noise.
+  const allRules: string[] = [];
+  const seenRules = new Set<string>();
+  const addRules = (rules: string[] | undefined, prefix: string) => {
+    if (!rules?.length) return;
+    for (const r of rules) {
+      const normalized = r.toLowerCase().trim();
+      if (!seenRules.has(normalized)) {
+        seenRules.add(normalized);
+        allRules.push(`- [${prefix}] ${r}`);
+      }
+    }
+  };
+  addRules(context.red_lines, "INTERDIT");
+  addRules(context.brand_rules_concept, "CONCEPT");
+  addRules(context.brand_rules_copy, "COPY");
+
+  // ── Brief directive adapts to count ──
+  const briefDirective = context.brief_summary
+    ? generateCount === 1
+      ? `\n=== BRIEF UTILISATEUR (PRIORITE HAUTE) ===\n${context.brief_summary}\n→ Le concept DOIT explorer cette direction.\n`
+      : `\n=== BRIEF UTILISATEUR (PRIORITE HAUTE) ===\n${context.brief_summary}\n→ AU MOINS ${Math.min(2, generateCount)} concepts sur ${generateCount} doivent explorer cette direction.\n`
+    : "";
+
+  // ── Layout analysis: compact for planner, full for art-director ──
+  const layoutAnalysisBlock = (() => {
+    if (!layoutAnalyses || layoutAnalyses.size === 0) return "";
+    const lines: string[] = ["=== LAYOUTS ASSIGNES (structure) ==="];
+    const seen = new Set<string>();
+    for (const s of skeletons) {
+      if (seen.has(s.layout_family)) continue;
+      seen.add(s.layout_family);
+      const analysis = layoutAnalyses.get(s.layout_family);
+      if (analysis) {
+        lines.push(formatLayoutAnalysisCompact(s.layout_family, analysis));
+      }
+    }
+    if (lines.length <= 1) return "";
+    return lines.join("\n");
+  })();
+
+  const claudeUserPrompt = `Cree ${generateCount} concepts publicitaires structures.
 
 === LE CLIENT ===
 Tension: ${context.audience_tension}
 Emotion exploitable: ${context.emotional_angle}
 Niveau de conscience: ${awareness}
-${context.persona_desires ? `\nDESIRS PERSONA (5 niveaux): ${context.persona_desires}` : ""}
+${context.persona_desires ? `DESIRS PERSONA (5 niveaux): ${context.persona_desires}` : ""}
 ${context.persona_triggers ? `TRIGGERS: ${context.persona_triggers}` : ""}
-${context.persona_language_profile ? `\n=== PROFIL LINGUISTIQUE PERSONA (UTILISER POUR LE COPY) ===
-${context.persona_language_profile}
-→ UTILISE ces trigger words et ce ton dans les headlines et CTA!` : ""}
+${context.persona_language_profile ? `PROFIL LINGUISTIQUE: ${context.persona_language_profile}` : ""}
 ${context.persona_decision_style ? `STYLE DECISION: ${context.persona_decision_style}` : ""}
+${context.persona_buying_psychology ? `PSYCHOLOGIE ACHAT: ${context.persona_buying_psychology}` : ""}
 
 === LE PRODUIT ===
 Marque: ${context.brand_name}
@@ -280,10 +359,13 @@ Produit: ${context.product_name}
 Benefice cle: ${context.product_key_benefit}
 Promesse: ${context.promise}
 Preuve: ${context.proof}
-${context.product_fab_benefits ? `\nBENEFICES FAB: ${context.product_fab_benefits}` : ""}
+${context.product_fab_benefits ? `BENEFICES FAB: ${context.product_fab_benefits}` : ""}
 ${context.product_usp_triptyque ? `USP TRIPTYQUE: ${context.product_usp_triptyque}` : ""}
 ${context.product_objections ? `OBJECTIONS: ${context.product_objections}` : ""}
 ${context.product_value_equation ? `VALUE EQUATION: ${context.product_value_equation}` : ""}
+${context.product_dur_problems ? `PROBLEMES DUR: ${context.product_dur_problems}` : ""}
+${context.product_before_after ? `TRANSFORMATIONS: ${context.product_before_after}` : ""}
+${context.product_review_quotes ? `CITATIONS CLIENTS: ${context.product_review_quotes}` : ""}
 
 === IDENTITE VISUELLE ===
 Couleurs: primaire ${context.brand_visual_code.primary_color}, secondaire ${context.brand_visual_code.secondary_color}, accent ${context.brand_visual_code.accent_color}
@@ -291,29 +373,35 @@ Typo: ${context.brand_visual_code.font_style}
 Ton: ${context.brand_visual_code.visual_tone}
 Format: ${context.format_goal}
 Contraintes: ${context.constraints.join(", ") || "aucune"}
-${context.brief_summary ? `Brief: ${context.brief_summary}` : ""}
-${context.brand_combat ? `Combat/Ennemi: ${context.brand_combat}` : ""}
+${briefDirective}${context.brand_combat ? `Combat/Ennemi: ${context.brand_combat}` : ""}
 ${context.brand_values?.length ? `Valeurs: ${context.brand_values.map(v => `${v.name} (${v.signification})`).join(", ")}` : ""}
-${context.red_lines?.length ? `\n⛔ RED LINES (INTERDITS ABSOLUS — NE JAMAIS VIOLER):\n${context.red_lines.map(r => `- ${r}`).join("\n")}` : ""}
-${daFingerprint ? `\n${formatDAFingerprintForPrompt(daFingerprint)}` : ""}
-${context.angle_epic_type ? `\n=== ANGLE MARKETING SELECTIONNE (EPIC: ${context.angle_epic_type.toUpperCase()}) ===
+${allRules.length > 0 ? `\n⛔ REGLES MARQUE (INTERDITS — NE JAMAIS VIOLER):\n${allRules.join("\n")}` : ""}
+${context.angle_epic_type ? `\n=== ANGLE MARKETING (EPIC: ${context.angle_epic_type.toUpperCase()}) ===
 Core Benefit: ${context.angle_core_benefit || ""}
 Terrain: ${context.angle_terrain || ""}
-${context.angle_hooks?.length ? `HOOKS PRE-ECRITS (utiliser comme inspiration):\n${context.angle_hooks.map(h => `  - "${h}"`).join("\n")}` : ""}
-${context.angle_narrative ? `NARRATIVE: ${context.angle_narrative}` : ""}` : ""}
-${lock ? `\n=== SOCLE STRATEGIQUE ===\nThese: ${lock.campaignThesis}\nPromesse: ${lock.lockedPromise}\nPreuve: ${lock.lockedProof}` : ""}
+${context.angle_hooks?.length ? `HOOKS (inspiration):\n${context.angle_hooks.map(h => `  - "${h}"`).join("\n")}` : ""}
+${context.angle_narrative ? `NARRATIVE: ${context.angle_narrative}` : ""}
+${context.angle_visual_direction ? `DIRECTION VISUELLE: ${context.angle_visual_direction}` : ""}` : ""}
+${lock ? `\n=== SOCLE STRATEGIQUE (PRIME SUR LE PRODUIT) ===\nThese: ${lock.campaignThesis}\nPromesse: ${lock.lockedPromise}\nPreuve: ${lock.lockedProof}` : ""}
 Images produit: ${hasProductImages ? "OUI — photos du vrai packaging disponibles. Utilise render_family 'design_led' pour 1-2 concepts (fond gradient + photo produit) ET 'photo_led'/'hybrid' pour les autres." : "NON — decrire le produit visuellement. N'utilise PAS render_family 'design_led'."}
 
 === METHODOLOGIE ===
 ${(() => {
   const skeletonFormats = skeletons.map(s => s.format_family);
-  const k = getKnowledgeForStage("planner", awareness, skeletonFormats);
+  const brandTone = context.brand_visual_code.visual_tone;
+  const k = getKnowledgeForStage("planner", awareness, skeletonFormats, brandTone);
   return [k.methodology, k.visual_rules, k.tactics].filter(Boolean).join("\n\n");
 })()}
 
 ${memory && memory.totalAds > 0 ? `\n${formatCreativeMemoryDirective(memory)}\n` : ""}
+${fewShotExamples && fewShotExamples.length > 0 ? `\n${formatFewShotDirective(fewShotExamples)}\n` : ""}
 === SQUELETTES STRATEGIQUES PRE-ASSIGNES ===
 ${skeletonDescription}
+${level === 3 ? "\n→ MODE EXPERIMENTAL: Tu PEUX changer l'ad_job et le marketing_lever si tu trouves une combinaison plus surprenante. Le layout_family et format_family restent fixes.\n" : ""}
+
+${layoutCompatibility}
+
+${layoutAnalysisBlock}
 
 === FORMAT JSON (array de ${generateCount} objets) ===
 [
@@ -322,39 +410,32 @@ ${skeletonDescription}
     "format_family": "${skeletons[0].format_family}",
     "awareness_stage": "${awareness}",
     "marketing_lever": "${skeletons[0].marketing_lever}",
-
-    "belief_shift": "DE '[croyance actuelle]' → VERS '[nouvelle croyance]'",
-    "proof_mechanism": "ingredient|mechanism|texture|transformation|social_proof|authority|comparison|data|offer|certification",
-    "proof_text": "Texte de preuve visible (ex: '4.8★ · 12 000 avis') ou null",
-
-    "layout_family": "left_copy_right_product|center_hero_top_claim|split_screen|card_stack|quote_frame|badge_cluster|vertical_story_stack|diagonal_split|hero_with_bottom_offer|macro_with_side_copy",
+    "layout_family": "${skeletons[0].layout_family}",
     "render_family": "photo_led|design_led|hybrid",
-    "rupture_structure": "hyper_scale|frozen_explosion|hybrid_fusion|dry_levitation|cutaway|mirror_symmetry|radical_minimalism|anachronism|macro_texture|visual_humor",
-    "graphic_tension": "diagonal_split|framing_in_frame|low_angle_hero|negative_space_block|radial_focus|shadow_play|z_pattern|color_block_contrast|verticality|spotlight",
-    "visual_style": "quiet_luxury|hyper_clean_tech|editorial_fashion|organic_earthy|vibrant_street|gritty_industrial|dreamcore|pop_high_saturation",
-    "style_mode": "brand_native|brand_adjacent|stretch",
     "human_presence": "none|hand|face|body",
 
     "visual_device": "SCENE VISUELLE PURE 3-4 phrases. Ce qu'on VOIT uniquement.",
     "product_role": "hero|supporting|contextual|absent",
-    "background_treatment": "minimal|contextual|storytelling|abstract|gradient",
-    "contrast_principle": "La tension visuelle qui drive la composition",
-
-    "headline": "3-8 mots percutants",
-    "cta": "2-5 mots originaux",
-    "offer_module": "null ou texte offre (ex: '-20% code REBELLE20')",
     "text_zone_spec": "top|bottom|left|right|top-left|top-right|bottom-left|bottom-right",
 
-    "customer_insight": "Verite VIE du client, pas benefice produit",
-    "learning_hypothesis": "Si cette pub performe, cela signifie que...",
+    "headline": "PUNCHLINE complete (15 mots MAX, vise 5-8)",
+    "cta": "2-5 mots originaux en francais",
 
-    "novelty_score": 7,
-    "clarity_score": 8,
-    "brand_fit_score": 8,
-
-    "realism_target": "photorealistic|stylized_photo|editorial|graphic_design|mixed_media"
+    "belief_shift": "DE '[croyance actuelle]' → VERS '[nouvelle croyance]'",
+    "customer_insight": "Verite sur la VIE du client",
+    "contrast_principle": "Tension visuelle qui cree l'impact"
   }
-]`,
+]`;
+
+  const response = await callClaudeWithRetry(() =>
+    client.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 12000,
+      system: claudeSystemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: claudeUserPrompt,
         },
       ],
     })
@@ -375,42 +456,53 @@ ${skeletonDescription}
       const skeleton = skeletons[i] || skeletons[0];
 
       // Enforce skeleton assignments (Claude sometimes drifts)
+      // In experimental mode (level 3), accept Claude's ad_job/lever if valid (don't force skeleton)
       concept.ad_job = validateEnum(concept.ad_job, AD_JOBS, skeleton.ad_job);
       concept.marketing_lever = validateEnum(concept.marketing_lever, MARKETING_LEVERS, skeleton.marketing_lever);
+      if (level < 3) {
+        // In classique/creatif mode, force skeleton values
+        concept.ad_job = skeleton.ad_job;
+        concept.marketing_lever = skeleton.marketing_lever;
+      }
       concept.format_family = validateEnum(concept.format_family, FORMAT_FAMILIES, skeleton.format_family);
       concept.awareness_stage = validateEnum(concept.awareness_stage, AWARENESS_STAGES, skeleton.awareness_stage);
 
-      // Validate all taxonomy fields
-      concept.layout_family = validateEnum(concept.layout_family, LAYOUT_FAMILIES, getDefaultLayout(concept.format_family));
-      concept.proof_mechanism = validateEnum(concept.proof_mechanism, PROOF_MECHANISMS, getDefaultProof(concept.format_family));
+      // Enforce layout_family from skeleton (pre-assigned for diversity)
+      // In experimental mode, accept Claude's layout choice if valid
+      if (level === 3) {
+        concept.layout_family = validateEnum(concept.layout_family, LAYOUT_FAMILIES, skeleton.layout_family);
+      } else {
+        concept.layout_family = skeleton.layout_family;
+      }
       concept.render_family = validateEnum(concept.render_family, RENDER_FAMILIES, getDefaultRender(concept.format_family));
-      concept.rupture_structure = validateEnum(concept.rupture_structure, RUPTURE_STRUCTURES, "frozen_explosion");
-      concept.graphic_tension = validateEnum(concept.graphic_tension, GRAPHIC_TENSIONS, "radial_focus");
-      concept.visual_style = validateEnum(concept.visual_style, VISUAL_STYLES, "hyper_clean_tech");
-      concept.style_mode = validateEnum(concept.style_mode, STYLE_MODES, "brand_native");
       concept.human_presence = validateEnum(concept.human_presence, HUMAN_PRESENCES, "none");
-
-      // Validate other fields
       concept.product_role = validateEnum(
         concept.product_role,
         ["hero", "supporting", "contextual", "absent"] as const,
         "hero"
-      );
-      concept.background_treatment = validateEnum(
-        concept.background_treatment,
-        ["minimal", "contextual", "storytelling", "abstract", "gradient"] as const,
-        "minimal"
       );
       concept.text_zone_spec = validateEnum(
         concept.text_zone_spec,
         ["top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"] as const,
         "top"
       );
-      concept.realism_target = validateEnum(
-        concept.realism_target,
-        ["photorealistic", "stylized_photo", "editorial", "graphic_design", "mixed_media"] as const,
-        "photorealistic"
+
+      // Fill defaults for fields no longer asked from Claude (kept for DB compat)
+      concept.proof_mechanism = validateEnum(concept.proof_mechanism, PROOF_MECHANISMS, getDefaultProof(concept.format_family));
+      concept.rupture_structure = validateEnum(concept.rupture_structure, RUPTURE_STRUCTURES, "frozen_explosion");
+      concept.graphic_tension = validateEnum(concept.graphic_tension, GRAPHIC_TENSIONS, "radial_focus");
+      concept.visual_style = validateEnum(concept.visual_style, VISUAL_STYLES, "hyper_clean_tech");
+      concept.style_mode = validateEnum(concept.style_mode, STYLE_MODES, "brand_native");
+      concept.background_treatment = validateEnum(
+        concept.background_treatment,
+        ["minimal", "contextual", "storytelling", "abstract", "gradient"] as const,
+        concept.render_family === "design_led" ? "gradient" : "contextual"
       );
+
+      // Derive realism_target from render_family
+      concept.realism_target = concept.render_family === "design_led"
+        ? (hasProductImages ? "graphic_design" : "photorealistic")
+        : concept.render_family === "hybrid" ? "mixed_media" : "photorealistic";
 
       // Don't allow graphic_design without product images
       if (concept.realism_target === "graphic_design" && !hasProductImages) {
@@ -423,32 +515,45 @@ ${skeletonDescription}
       concept.overlay_intent = assignOverlayIntentV3(concept);
       concept.text_density = assignTextDensityV3(concept);
 
-      // Ensure scores are numbers in range
-      concept.novelty_score = clampScore(concept.novelty_score);
-      concept.clarity_score = clampScore(concept.clarity_score);
-      concept.brand_fit_score = clampScore(concept.brand_fit_score);
+      // Fill default scores (no longer self-assessed)
+      concept.novelty_score = 5;
+      concept.clarity_score = 5;
+      concept.brand_fit_score = 5;
 
       // Ensure required strings exist
       if (!concept.visual_device || concept.visual_device.length < 20) {
         concept.visual_device = `Scene visuelle pour ${concept.format_family} avec ${context.product_name} en role ${concept.product_role}.`;
       }
+      // Fix incomplete visual_device — ensure it ends on a complete sentence
+      concept.visual_device = fixIncompleteText(concept.visual_device);
+
       if (!concept.headline || concept.headline.length < 2) {
         concept.headline = context.promise.slice(0, 30);
       }
+      // Enforce headline completeness — max 8 words, no dangling prepositions
+      concept.headline = enforceHeadlineLength(concept.headline);
+
       if (!concept.cta || concept.cta.length < 2) {
         concept.cta = "Découvrir";
       }
-      if (!concept.belief_shift) {
+      // Enforce CTA max 5 words
+      const ctaWords = concept.cta.trim().split(/\s+/);
+      if (ctaWords.length > 5) {
+        concept.cta = ctaWords.slice(0, 5).join(" ");
+      }
+
+      // Keep Claude's creative fields when available — only fallback if truly empty
+      if (!concept.belief_shift?.trim()) {
         concept.belief_shift = `DE 'statu quo' → VERS '${context.promise}'`;
       }
-      if (!concept.customer_insight) {
+      if (!concept.customer_insight?.trim()) {
         concept.customer_insight = context.audience_tension;
       }
-      if (!concept.learning_hypothesis) {
+      if (!concept.learning_hypothesis?.trim()) {
         concept.learning_hypothesis = `Si cette pub performe, l'audience réagit au levier ${concept.marketing_lever}`;
       }
-      if (!concept.contrast_principle) {
-        concept.contrast_principle = `Tension entre ${concept.rupture_structure} et ${concept.graphic_tension}`;
+      if (!concept.contrast_principle?.trim()) {
+        concept.contrast_principle = `${concept.format_family} — ${concept.render_family}`;
       }
 
       // Inject batch lock values
@@ -473,6 +578,7 @@ ${skeletonDescription}
         job: c.ad_job,
         lever: c.marketing_lever,
         format: c.format_family,
+        layout: c.layout_family,
         render: c.render_family,
         style: c.visual_style,
         headline: c.headline,
@@ -480,7 +586,12 @@ ${skeletonDescription}
       }))
     );
 
-    return concepts;
+    // Log layout distribution for monitoring
+    const layoutCounts: Record<string, number> = {};
+    concepts.forEach(c => { layoutCounts[c.layout_family] = (layoutCounts[c.layout_family] || 0) + 1; });
+    console.log("[ConceptPlanner v3] Layout distribution:", layoutCounts);
+
+    return { concepts, claudeSystemPrompt, claudeUserPrompt };
   } catch (e) {
     console.error("[ConceptPlanner v3] JSON parse error:", jsonStr.slice(0, 400));
     throw new Error(`ConceptPlanner: JSON invalide — ${(e as Error).message}`);
@@ -544,6 +655,50 @@ function validateEnum<T extends string>(
   if (value && validValues.includes(value)) return value;
   return fallback;
 }
+
+/**
+ * Fix incomplete text (visual_device, etc.) that got cut mid-sentence.
+ * Truncates back to the last complete sentence (ending with . ! or ?).
+ * If no complete sentence found, adds a period.
+ */
+function fixIncompleteText(text: string): string {
+  if (!text) return text;
+
+  const trimmed = text.trim();
+
+  // Already ends with sentence-ending punctuation
+  if (/[.!?]$/.test(trimmed)) return trimmed;
+
+  // Find the last complete sentence
+  const lastPeriod = Math.max(
+    trimmed.lastIndexOf(". "),
+    trimmed.lastIndexOf("! "),
+    trimmed.lastIndexOf("? "),
+  );
+
+  // Also check for sentence-ending punctuation at the very end of a clause
+  const lastTerminator = Math.max(
+    trimmed.lastIndexOf("."),
+    trimmed.lastIndexOf("!"),
+    trimmed.lastIndexOf("?"),
+  );
+
+  if (lastTerminator > trimmed.length * 0.5) {
+    // There's a sentence terminator in the second half — cut there
+    return trimmed.slice(0, lastTerminator + 1);
+  }
+
+  if (lastPeriod > trimmed.length * 0.3) {
+    // There's a complete sentence before the cut — use it
+    return trimmed.slice(0, lastPeriod + 1);
+  }
+
+  // No good break point — just add a period to close it
+  return trimmed + ".";
+}
+
+/** Alias for shared smart truncation utility */
+const enforceHeadlineLength = smartTruncateHeadline;
 
 function clampScore(value: unknown): number {
   const n = typeof value === "number" ? value : 5;

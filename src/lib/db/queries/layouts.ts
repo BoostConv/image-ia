@@ -1,7 +1,7 @@
 import { eq, and, isNull, or } from "drizzle-orm";
 import { db } from "../index";
 import { layoutInspirations } from "../schema";
-import type { LayoutFamily } from "../schema";
+import type { LayoutFamily, LayoutAnalysis } from "../schema";
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
@@ -85,6 +85,29 @@ export async function getLayoutInspirationMetadata(
 }
 
 /**
+ * Get the Vision analysis for a layout family.
+ * Returns the first available analysis (brand-specific prioritized).
+ */
+export async function getLayoutAnalysis(
+  layoutFamily: LayoutFamily,
+  brandId?: string
+): Promise<LayoutAnalysis | null> {
+  const inspirations = await getLayoutInspirations(layoutFamily, brandId);
+
+  if (!inspirations.length) return null;
+
+  // Prioritize brand-specific with analysis
+  const brandSpecific = inspirations.find(
+    (i) => i.brandId === brandId && i.analysis
+  );
+  if (brandSpecific?.analysis) return brandSpecific.analysis as LayoutAnalysis;
+
+  // Fallback to any with analysis
+  const withAnalysis = inspirations.find((i) => i.analysis);
+  return (withAnalysis?.analysis as LayoutAnalysis) || null;
+}
+
+/**
  * Get all layout families with their inspiration counts.
  */
 export async function getLayoutFamilySummary(brandId?: string): Promise<
@@ -98,16 +121,19 @@ export async function getLayoutFamilySummary(brandId?: string): Promise<
   const allResults = await db.select().from(layoutInspirations);
 
   const families: LayoutFamily[] = [
-    "left_copy_right_product",
-    "center_hero_top_claim",
-    "split_screen",
-    "card_stack",
-    "quote_frame",
-    "badge_cluster",
-    "vertical_story_stack",
-    "diagonal_split",
-    "hero_with_bottom_offer",
-    "macro_with_side_copy",
+    // Éducatifs
+    "story_sequence", "listicle", "annotation_callout", "flowchart",
+    // Centrés Image
+    "hero_image", "product_focus", "product_in_context", "probleme_zoome",
+    "golden_hour", "macro_detail", "action_shot", "ingredient_showcase",
+    "scale_shot", "destruction_shot", "texture_fill", "negative_space",
+    // Social Proof
+    "testimonial_card", "ugc_style", "press_as_seen_in", "wall_of_love",
+    "statistique_data_point", "tweet_post_screenshot",
+    // Comparatifs
+    "split_screen", "timeline_compare", "avant_apres",
+    // Centrés Texte
+    "text_heavy", "single_word", "fill_the_blank", "two_truths", "manifesto", "quote_card",
   ];
 
   return families.map((family) => {
